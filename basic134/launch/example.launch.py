@@ -84,7 +84,8 @@ def generate_launch_description():
         output     = 'screen',
         parameters = [{'family':   'robotlab'},
                       {'motors':   ['4.3',  '4.5',      '4.4']},
-                      {'joints':   ['base', 'shoulder', 'elbow']}],
+                      {'joints':   ['base', 'shoulder', 'elbow'],},
+                      {'testmode' : 'off'}],
         on_exit    = Shutdown())
 
     # Configure a node for the simple demo.  PLACEHOLDER FOR YOUR CODE!!
@@ -124,7 +125,7 @@ def generate_launch_description():
         node_robot_state_publisher_ACTUAL,
         node_rviz,
         node_hebi,
-        # node_demo,
+        node_demo,
 
         # # ALTERNATE: Start if we want the GUI to command the robot.
         # # THIS WILL BE **VERY** JITTERY, running at 10Hz!

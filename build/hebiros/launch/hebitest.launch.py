@@ -1,1 +1,0 @@
-/home/robot/robotws/src/hebiros/launch/hebitest.launch.py

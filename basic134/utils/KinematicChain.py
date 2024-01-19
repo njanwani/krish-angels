@@ -59,10 +59,10 @@ class KinematicChain():
         raise Exception(string)
 
     # Initialization.
-    def __init__(self, node, baseframe, tipframe, expectedjointnames):
+    def __init__(self, node, baseframe, tipframe, expectedjointnames, lam=20):
         # Store the node (for the helper functions).
         self.node = node
-
+        self.lam = lam
         # Prepare the information.
         self.steps = []
         self.dofs  = 0
@@ -146,8 +146,7 @@ class KinematicChain():
     def fkin(self, q):
         # Check the number of joints
         if (len(q) != self.dofs):
-            self.error("Number of joint angles (%d) does not chain (%d)",
-                       len(q), self.dofs)
+            self.error(f"Number of joint angles {len(q)} does not chain {self.dofs}")
 
         # Clear any data from past invocations (just to be safe).
         for s in self.steps:
@@ -195,3 +194,19 @@ class KinematicChain():
 
         # Return the info
         return (ptip, Rtip, Jv, Jw)
+    
+    def ikin(self, dt, qlast, pdlast, vd):
+        # Compute the old forward kinematics.
+        (p, R, Jv, Jw) = self.fkin(qlast)
+
+        # Compute the inverse kinematics
+        vr    = vd + self.lam * ep(pdlast, p)
+        # wr    = wd + self.lam * eR(Rdlast, R)
+        J     = np.vstack((Jv))
+        xrdot = np.vstack((vr))
+        qdot  = np.linalg.pinv(J) @ xrdot
+        # raise Exception(f'{pdlast}\n\n\n{p}\n\n\n{vd}\n\n\n{J}\n\n\n{xrdot}\n\n\n{qdot}\n\n\nZamnnnn')
+        # Integrate the joint position.
+        q = qlast + dt * qdot
+        
+        return (q.flatten(), qdot.flatten())

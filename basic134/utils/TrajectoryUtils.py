@@ -1,3 +1,5 @@
+import numpy as np
+
 #
 #   Constant Helpers
 #
@@ -72,3 +74,8 @@ def spline5(t, T, p0, pf, v0, vf, a0, af):
     p = a + b * t +   c * t**2 +   d * t**3 +   e * t**4 +   f * t**5
     v =     b     + 2*c * t    + 3*d * t**2 + 4*e * t**3 + 5*f * t**4
     return (p,v)
+
+def splinetime(p0, pf, v0, vf, vmax, amax):
+        return 3
+        m = max(1.5 * (np.linalg.norm(pf - p0) / vmax + np.abs(v0) / amax + np.abs(vf) / amax))
+        return max(m, 0.5)

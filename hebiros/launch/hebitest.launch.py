@@ -39,7 +39,8 @@ def generate_launch_description():
         output     = 'screen',
         parameters = [{'family': 'robotlab'},
                       {'motors': ['4.3', '4.4', '4.5']},
-                      {'joints': ['one', 'two', 'three']}]
+                      {'joints': ['one', 'two', 'three']},
+                      {'testmode': 'track'}])
         
 
     ######################################################################

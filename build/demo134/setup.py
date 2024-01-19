@@ -1,1 +1,0 @@
-/home/robot/robotws/src/demo134/setup.py
