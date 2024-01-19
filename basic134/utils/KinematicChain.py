@@ -195,16 +195,19 @@ class KinematicChain():
         # Return the info
         return (ptip, Rtip, Jv, Jw)
     
-    def ikin(self, dt, qlast, pdlast, vd):
+    def weighted_inv(J, gamma):
+        return J.T @ np.linalg.pinv(J @ J.T + gamma**2 * np.identity(J.shape[0]))
+    
+    def ikin(self, dt, qlast, pdlast, vd, q_secondary=np.zeros(3), lam_secondary=1):
         # Compute the old forward kinematics.
         (p, R, Jv, Jw) = self.fkin(qlast)
-
+        q_secondary = lam_secondary * (np.array([np.pi / 2, -np.pi / 2, np.pi / 2]).reshape((3,1)) - qlast)
         # Compute the inverse kinematics
         vr    = vd + self.lam * ep(pdlast, p)
         # wr    = wd + self.lam * eR(Rdlast, R)
         J     = np.vstack((Jv))
         xrdot = np.vstack((vr))
-        qdot  = np.linalg.pinv(J) @ xrdot
+        qdot  = np.linalg.pinv(J) @ xrdot #+ (1 - np.linalg.pinv(J) @ J) @ q_secondary.reshape((3,1)) #KinematicChain.weighted_inv(J, 0.5) @ xrdot
         # raise Exception(f'{pdlast}\n\n\n{p}\n\n\n{vd}\n\n\n{J}\n\n\n{xrdot}\n\n\n{qdot}\n\n\nZamnnnn')
         # Integrate the joint position.
         q = qlast + dt * qdot

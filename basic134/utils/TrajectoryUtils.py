@@ -24,6 +24,20 @@ def interpolate(t, T, p0, pf):
     v =    + (pf-p0)/T
     return (p,v)
 
+def bound_taskspace(x, mag_zeropos, lam=0.02):
+    """
+        x is the position we wish to bound to available task space
+        mag_zeropos is the magnitude of the zero position of the robot (facing straight out to the side)
+        lam is a relaxation parameter
+    """
+    fac = np.array([0,0,0.18])
+    _x = x - fac
+    if np.linalg.norm(_x) >= mag_zeropos + lam:
+        return (mag_zeropos - lam) * (_x / np.linalg.norm(_x)) + fac
+
+    return x
+        
+         
 
 #
 #   Cubic Spline Helpers
@@ -75,7 +89,9 @@ def spline5(t, T, p0, pf, v0, vf, a0, af):
     v =     b     + 2*c * t    + 3*d * t**2 + 4*e * t**3 + 5*f * t**4
     return (p,v)
 
-def splinetime(p0, pf, v0, vf, vmax, amax):
-        return 3
+def splinetime(p0, pf, v0, vf, vmax, amax, cartesian=True):
+        if cartesian:
+            return max(np.linalg.norm(p0 - pf) * 6, 0.5)
+        
         m = max(1.5 * (np.linalg.norm(pf - p0) / vmax + np.abs(v0) / amax + np.abs(vf) / amax))
         return max(m, 0.5)
