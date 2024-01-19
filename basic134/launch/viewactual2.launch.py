@@ -114,4 +114,5 @@ def generate_launch_description():
         node_robot_state_publisher_ACTUAL,
         node_rviz,
         node_hebi,
+        node_demo,
     ])

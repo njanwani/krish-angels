@@ -1,13 +1,15 @@
 #!/usr/bin/env python3
 #
-#   goals3.py
+#   demo134.py
 #
-#   
+#   Demonstration node to interact with the HEBIs.
+#
 import numpy as np
 import rclpy
 
 from rclpy.node         import Node
 from sensor_msgs.msg    import JointState
+from KinematicChain     import *
 
 #
 #   Definitions
@@ -23,33 +25,23 @@ class DemoNode(Node):
     
     AMPS = np.array([0.4, 0.3, 0.25])
     PERIODS = np.array([1.0, 4.0, 2.0])
+    WAITING = np.array([0.0, -1.5708, 1.5708])
     WAVE_T = 6
     VMAX = 2
     AMAX = VMAX / 3
     
     def __init__(self, name):
-        
         # Initialize the node, naming it as specified
         super().__init__(name)
         self.t = 0
         self.t0 = self.t
         self.mode = 0
-        
-        # Set up kinematic chain
-        self.chain = KinematicChain(node, 'world', 'tip', [TODO: ADD JOINT NAMES FROM URDF])
-
-        # Initialize position/joint orientation
-        self.q = self.grabfbk()
-        self.xd = self.chain.fkin(self.q)
-
-        self.Tmove = DemoNode.splinetime(self.q, DemoNode.wave(0)[0], np.zeros(3), DemoNode.wave(0)[1])
-
-        # Desired position/joint orientation
-        self.qD = None
-        self.xD = None
-        
+        self.position0 = self.grabfbk()
+        self.Tmove = DemoNode.splinetime(self.position0, DemoNode.wave(0)[0], np.zeros(3), DemoNode.wave(0)[1])
         # Create a temporary subscriber to grab the initial position.
-        self.get_logger().info("Initial positions: %r" % self.q)
+        self.get_logger().info("Initial positions: %r" % self.position0)
+
+        self.chain = KinematicChain(self, 'world', 'tip', ['basemotor', 'shouldermotor', 'elbowmotor'])
 
         # Create a message and publisher to send the joint commands.
         self.cmdmsg = JointState()
@@ -107,28 +99,39 @@ class DemoNode(Node):
         pos = np.zeros(3)
         vel = np.zeros(3)
         tau = self.t - self.t0
+        
+        # Go to waiting position
         if self.mode == 0:
-            init_pos = self.q
+            init_pos = self.position0
             pos, vel = DemoNode.spline(tau, self.Tmove, init_pos, DemoNode.wave(0)[0], np.zeros(3), DemoNode.wave(0)[1])
+        
+        # Stay at waiting position
         elif self.mode == 1:
             pos, vel = DemoNode.wave(tau)
+
+        # Move to point
         elif self.mode == 2:
-            pos, vel = DemoNode.spline(tau, self.Tmove, DemoNode.wave(0)[0], self.qA, DemoNode.wave(0)[1], np.zeros(3))
+            pos, vel = DemoNode.spline(tau, self.Tmove, DemoNode.wave(0)[0], self.position0, DemoNode.wave(0)[1], np.zeros(3))
+        
+        # Return to waiting position
         elif self.mode == 3:
-            pos, vel = self.q, np.zeros(3)
+            pos, vel = self.position0, np.zeros(3)            # Waiting position
+
         else:
             raise Exception('Unknown mode encountered')
         
         if self.t - self.t0 > self.Tmove:
             self.mode += 1
-            self.mode %= 4
+            self.mode %= 4 
             self.t0 = self.t
             if self.mode == 0:
-                self.Tmove = DemoNode.splinetime(self.q, DemoNode.wave(0)[0], np.zeros(3), DemoNode.wave(0)[1])
+                self.Tmove = DemoNode.splinetime(self.position0, np.array([0.0, 1.5708, -1.5708]), np.zeros(3), DemoNode.wave(0)[1])
             elif self.mode == 1:
                 self.Tmove = 6
             elif self.mode == 2:
-                self.Tmove = DemoNode.splinetime(DemoNode.wave(0)[0], self.q, DemoNode.wave(0)[1], np.zeros(3))
+                # self.position0 = np.zeros(3)
+                # self.position0[1] = np.pi
+                self.Tmove = DemoNode.splinetime(DemoNode.wave(0)[0], self.position0, DemoNode.wave(0)[1], np.zeros(3))
             elif self.mode == 3:
                 self.Tmove = 1
             else:
@@ -145,7 +148,7 @@ class DemoNode(Node):
         self.t += 0.01
 
     def wave(tau):
-        pos = DemoNode.AMPS * np.sin(tau * np.pi / 6 * 2 * DemoNode.PERIODS)
+        pos = DemoNode.AMPS * np.sin(tau * np.pi / 6 * 2 * DemoNode.PERIODS) + np.array([0, 0, np.pi/2])
         vel = np.multiply(DemoNode.AMPS, 2 * np.pi / 6 * DemoNode.PERIODS) * np.cos(tau * np.pi / 6 * 2 * DemoNode.PERIODS)
         return pos, vel
 

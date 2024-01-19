@@ -8,7 +8,7 @@ from std_msgs.msg               import String
 from urdf_parser_py.urdf        import Robot
 
 # Grab the utilities
-from TransformHelpers   import *
+from utils.TransformHelpers   import *
 
 class Joint(enum.Enum):
     FIXED    = 0

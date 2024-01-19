@@ -6,9 +6,12 @@
 #
 import numpy as np
 import rclpy
+# from KinematicChain import KinematicChain as KC
+from utils.KinematicChain import KinematicChain as KC
 
 from rclpy.node         import Node
 from sensor_msgs.msg    import JointState
+from visualization_msgs.msg import Marker
 
 
 #
@@ -26,9 +29,13 @@ class DemoNode(Node):
         # Initialize the node, naming it as specified
         super().__init__(name)
 
+        self.chain = KC(self, 'world', 'tip', ['base', 'shoulder', 'elbow'])
+
         # Create a temporary subscriber to grab the initial position.
         self.position0 = self.grabfbk()
         self.get_logger().info("Initial positions: %r" % self.position0)
+
+        self.curr_pos = self.position0
 
         # Create a message and publisher to send the joint commands.
         self.cmdmsg = JointState()
@@ -49,6 +56,7 @@ class DemoNode(Node):
         self.timer = self.create_timer(1/rate, self.sendcmd)
         self.get_logger().info("Sending commands with dt of %f seconds (%fHz)" %
                                (self.timer.timer_period_ns * 1e-9, rate))
+
 
     # Shutdown
     def shutdown(self):
@@ -78,17 +86,20 @@ class DemoNode(Node):
     def recvfbk(self, fbkmsg):
         # Just print the position (for now).
         # print(list(fbkmsg.position))
-        pass
+        self.curr_pos = fbkmsg.position
+        
 
     # Send a command - called repeatedly by the timer.
     def sendcmd(self):
         # Build up the message and publish.
         self.cmdmsg.header.stamp = self.get_clock().now().to_msg()
         self.cmdmsg.name         = ['base', 'shoulder', 'elbow']
-        self.cmdmsg.position     = [0.2, 0.4, -0.4]
-        self.cmdmsg.velocity     = [0.0, 0.0, 0.0]
+        self.cmdmsg.position     = self.position0 #[np.nan, np.nan, np.nan]
+        self.cmdmsg.velocity     = list(np.zeros(3)) #[np.nan, np.nan, np.nan]
         self.cmdmsg.effort       = [0.0, 0.0, 0.0]
         self.cmdpub.publish(self.cmdmsg)
+
+        self.get_logger().info(str(self.chain.fkin(self.curr_pos)))
 
 
 #
