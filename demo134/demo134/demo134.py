@@ -111,7 +111,7 @@ class DemoNode(Node):
         
         if self.t - self.t0 > self.Tmove:
             self.mode += 1
-            self.mode %= 4
+            self.mode %= 4 
             self.t0 = self.t
             if self.mode == 0:
                 self.Tmove = DemoNode.splinetime(self.position0, DemoNode.wave(0)[0], np.zeros(3), DemoNode.wave(0)[1])
