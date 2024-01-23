@@ -16,7 +16,7 @@ from rclpy.node         import Node
 from sensor_msgs.msg    import JointState
 from visualization_msgs.msg import Marker
 from geometry_msgs.msg import Pose, Point
-
+from std_msgs.msg import Float32
 
 #
 #   Definitions
@@ -56,25 +56,8 @@ class DemoNode(Node):
         # current robot position IN JOINT SPACE
         self.curr_pos = self.position0
 
-        # spline coordinates IN CARTESIAN SPACE
-        self.joint_wait = np.array([0, np.pi/2, -np.pi/2])
-        self.position_init = self.chain.fkin(self.position0)[0].flatten()
-        self.mag_zeropos = np.linalg.norm(self.chain.fkin(np.zeros(3))[0].flatten())
-        self.position_wait = self.chain.fkin(self.joint_wait)[0].flatten() #np.array([0.29972, -0.0508, 0.50607])
-        self.get_logger().info("Wait positions: %r" % self.position_wait)
-        # self.positions = [self.position_wait] + [bound_taskspace(DemoNode.POINT_LIB[i], mag_zeropos) for i in range(len(DemoNode.POINT_LIB))]
-        self.queue = [self.position_wait]
-        self.qlast = np.array(self.curr_pos).reshape((3,1))
-
-        self.t = time.time()
-        self.t0 = self.t
-        self.tmove = splinetime(self.position0, self.joint_wait, np.zeros(3), np.zeros(3), DemoNode.VMAX, DemoNode.AMAX, cartesian=False)
-        self.spline_index = -1
-        self.spline_segs = lambda idx: (self.queue[idx], self.queue[(idx + 1) % len(self.positions)])
-        self.mode = Mode.JOINT_SPLINE
-
-        self.B = 1.3406
-        self.C = 0.0
+        self.B = 1.4
+        self.C = 0.3
         # Subscribe to the actual joint states, waiting for the first message.
         self.actpos = None
         self.statessub = self.create_subscription(JointState, '/joint_states', self.cb_states, 1)
@@ -94,7 +77,7 @@ class DemoNode(Node):
             pass
 
         # Create a subscriber to receive point messages.
-        self.fbksub = self.create_subscription(Point, '/point', self.recvpoint, 10)
+        self.fbksub = self.create_subscription(Float32, '/B', self.recvB, 10)
 
         # Create a subscriber to continually receive joint state messages.
         self.fbksub = self.create_subscription(
@@ -105,20 +88,19 @@ class DemoNode(Node):
         self.timer = self.create_timer(1/rate, self.sendcmd)
         self.get_logger().info("Sending commands with dt of %f seconds (%fHz)" %
                                (self.timer.timer_period_ns * 1e-9, rate))
-
-     # Save the actual position.
+    
+    # Save the actual position.
     def cb_states(self, msg):
         self.actpos = msg.position
     
     def gravity(self, pos):
-        tau_shoulder = float(self.B * np.cos(pos[1]) + max(0, self.C * np.cos(pos[1]) * np.cos(pos[2])))
+        tau_shoulder = float(self.B * np.cos(self.actpos[1]) + max(0, self.C * np.cos(self.actpos[1]) * np.cos(self.actpos[2])))
         return [0.0, tau_shoulder, 0.0]
-    
+
     # Shutdown
     def shutdown(self):
         # No particular cleanup, just shut down the node.
         self.destroy_node()
-
 
     # Grab a single feedback - do not call this repeatedly.
     def grabfbk(self):
@@ -137,35 +119,16 @@ class DemoNode(Node):
         # Return the values.
         return self.grabpos
     
-
-
     # Receive feedback - called repeatedly by incoming messages.
     def recvfbk(self, fbkmsg):
         # Just print the position (for now).
         # print(list(fbkmsg.position))
         self.curr_pos = fbkmsg.position
         
-    # Receive a point message - called by incoming messages.
-    def recvpoint(self, pointmsg):
+    # Receive a float message - called by incoming messages.
+    def recvB(self, floatmsg: Float32):
         # Extract the data.
-        x = pointmsg.x
-        y = pointmsg.y
-        z = pointmsg.z
-        self.queue.append(bound_taskspace(np.array([x,y,z]), self.mag_zeropos))
-        self.queue.append(self.position_wait)
-        # self.spline_index += 1
-        # self.spline_index %= len(self.positions)
-        if self.mode == Mode.JOINT_SPLINE:
-            return
-        self.mode = Mode.TASK_SPLINE
-        self.t0 = self.t
-        self.tmove = splinetime(*self.queue[:2],
-                                np.zeros(3),
-                                np.zeros(3),
-                                DemoNode.VMAX,
-                                DemoNode.AMAX)
-        # Report.
-        self.get_logger().info("Running point %r, %r, %r" % (x,y,z))
+        self.B = floatmsg.data
 
     # Send a command - called repeatedly by the timer.
     def sendcmd(self):
@@ -173,45 +136,11 @@ class DemoNode(Node):
         self.t = time.time()
         self.cmdmsg.header.stamp = self.get_clock().now().to_msg()
         self.cmdmsg.name         = ['base', 'shoulder', 'elbow']
-        if self.mode == Mode.TASK_SPLINE:
-            p_last, _ = spline5(self.t - self.t0, self.tmove, 
-                        *self.queue[:2], 0, 0, 0, 0)
-            _, v = spline5(self.t + 1.0 / RATE - self.t0, self.tmove, 
-                        *self.queue[:2], 0, 0, 0, 0)
-            
-            # self.get_logger().info(str(p_last) + '\n\n\n' + str(v) + '\n\n\n' + str(self.qlast))
 
-            q, qdot = self.chain.ikin(1.0 / RATE, np.array(self.qlast).reshape((3,1)), p_last.reshape((3,1)), v.reshape((3,1)))
-        elif self.mode == Mode.HOLD:
-            q, qdot = self.qlast, np.zeros(3)
-        elif self.mode == Mode.JOINT_SPLINE:
-            q, qdot = spline5(self.t - self.t0, self.tmove, self.position0, self.joint_wait, np.zeros(3), np.zeros(3), np.zeros(3), np.zeros(3))
-        else:
-            self.get_logger().info("I fucked up bad...")
-            raise Exception("Zamn")
-
-        if self.mode == Mode.TASK_SPLINE and self.t - self.t0 > self.tmove:
-            self.queue.pop(0)
-            self.mode = Mode.HOLD
-            self.t0 = self.t
-            self.tmove = DemoNode.THOLD
-        elif self.mode == Mode.HOLD and self.t - self.t0 > self.tmove and self.t - self.t0 > self.tmove and len(self.queue) > 1:
-            self.mode = Mode.TASK_SPLINE
-            self.t0 = self.t
-            self.tmove = splinetime(*self.queue[:2],
-                                    np.zeros(3),
-                                    np.zeros(3),
-                                    DemoNode.VMAX,
-                                    DemoNode.AMAX)
-        elif self.mode == Mode.JOINT_SPLINE and self.t - self.t0 > self.tmove:
-            self.mode = Mode.HOLD
-            self.t0 = self.t
-            self.tmove = DemoNode.THOLD
-
-        self.qlast = q
-        self.cmdmsg.position = q.flatten().tolist()
-        self.cmdmsg.velocity = qdot.flatten().tolist()
-        self.cmdmsg.effort = self.gravity(q.flatten().tolist())
+        nan = float("nan")
+        self.cmdmsg.position = [self.position0[0], nan, nan]
+        self.cmdmsg.velocity = [0.0, nan, nan]
+        self.cmdmsg.effort = self.gravity(self.actpos)
         self.cmdpub.publish(self.cmdmsg)
 
 

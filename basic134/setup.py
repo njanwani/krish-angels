@@ -26,6 +26,7 @@ setup(
     entry_points={
         'console_scripts': [
             'demo134      = basic134.demo134:main',
+            'grav      = basic134.grav:main',
             'receivepoint = basic134.receivepoint:main',
         ],
     },
