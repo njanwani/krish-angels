@@ -176,6 +176,8 @@ class DemoNode(Node):
                 self.circ_msg.x = float(xc)
                 self.circ_msg.y = float(yc)
                 self.pubcirc.publish(self.circ_msg)
+                self.sent = True
+                self.recieved = False
 
         # Convert the image back into a ROS image and republish.
         self.pubrgb.publish(self.bridge.cv2_to_imgmsg(image, "rgb8"))
@@ -186,6 +188,7 @@ class DemoNode(Node):
         self.uc = int(msg.x)
         self.vc = int(msg.y)
         self.recieved = True
+        self.sent = False
         # if center != None:
         #     gx, gy = center
         #     self.circ_msg = Point()

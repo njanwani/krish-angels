@@ -146,7 +146,7 @@ class DetectorNode(Node):
                 cv2.ellipse(frame, (cx, cy), (w//2, h//2), 0, 0, 360, self.yellow,  2)
                 cv2.circle(frame, (cx, cy), 5,           self.red,    -1)
                 
-                if np.linalg.norm(np.array([self.circ_msg.x - cx, self.circ_msg.y - cy])) > 10:
+                if np.linalg.norm(np.array([self.circ_msg.x - cx, self.circ_msg.y - cy])) > 30:
                     self.c_found = False
 
                 if not self.c_found:
@@ -164,7 +164,7 @@ class DetectorNode(Node):
             if len(contours_paper) > 0:
                 # Pick the largest contour.
                 contour = max(contours_paper, key=cv2.contourArea)
-                if cv2.contourArea(contour) > 2000:
+                if cv2.contourArea(contour) > 500:
                     # Find the enclosing circle (convert to pixel values)
                     x,y,w,h = cv2.boundingRect(contour) 
                     

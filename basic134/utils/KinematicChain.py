@@ -213,3 +213,8 @@ class KinematicChain():
         q = qlast + dt * qdot
         
         return (q.flatten(), qdot.flatten())
+
+
+# point 1: x: 0.0095 y: -0.147  z: 0.0
+# point 2: x: 0.385  y: -0.197  z: 0.0
+# point 3: x: 0.147  y: 0.276   z: 0.0
