@@ -98,9 +98,9 @@ class DetectorNode(Node):
 
         # Erode and Dilate. Definitely adjust the iterations!
         iter = 4
-        binary = cv2.erode( binary, None, iterations=iter)
+        binary = cv2.erode(binary, None, iterations=iter)
         binary = cv2.dilate(binary, None, iterations=2*iter)
-        binary = cv2.erode( binary, None, iterations=iter)
+        binary = cv2.erode(binary, None, iterations=iter)
 
 
         # Find contours in the mask and initialize the current

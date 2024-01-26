@@ -27,6 +27,7 @@ class Mode(Enum):
     JOINT_SPLINE      = 0
     TASK_SPLINE       = 1
     HOLD              = 2
+    CONTACTED         = 3
 
 #
 #   DEMO Node Class
@@ -55,6 +56,8 @@ class DemoNode(Node):
 
         # current robot position IN JOINT SPACE
         self.curr_pos = self.position0
+        self.curr_vel = np.array([0, 0, 0])
+        self.curr_eff = np.array([0, 0, 0])
 
         # spline coordinates IN CARTESIAN SPACE
         self.joint_wait = np.array([0, np.pi/2, -np.pi/2])
@@ -63,7 +66,7 @@ class DemoNode(Node):
         self.position_wait = self.chain.fkin(self.joint_wait)[0].flatten() #np.array([0.29972, -0.0508, 0.50607])
         self.get_logger().info("Wait positions: %r" % self.position_wait)
         # self.positions = [self.position_wait] + [bound_taskspace(DemoNode.POINT_LIB[i], mag_zeropos) for i in range(len(DemoNode.POINT_LIB))]
-        self.queue = [self.position_wait]
+        self.queue = []
         self.qlast = np.array(self.curr_pos).reshape((3,1))
 
         self.t = time.time()
@@ -73,8 +76,15 @@ class DemoNode(Node):
         self.spline_segs = lambda idx: (self.queue[idx], self.queue[(idx + 1) % len(self.positions)])
         self.mode = Mode.JOINT_SPLINE
 
-        self.B = 1.3406
-        self.C = 0.0
+        # Detection gains for contact detection
+        # TODO: TUNE THESE HOES
+        self.pG = 10
+        self.vG = 0.9
+        self.eG = 0
+        self.thresh_contact = 1
+
+        self.B = 1.4
+        self.C = 0.3
         # Subscribe to the actual joint states, waiting for the first message.
         self.actpos = None
         self.statessub = self.create_subscription(JointState, '/joint_states', self.cb_states, 1)
@@ -87,6 +97,8 @@ class DemoNode(Node):
         self.cmdpub = self.create_publisher(JointState, '/joint_commands', 10)
         # self.tip_marker = self.create_publisher(Marker, '/tip_marker', 10)
 
+        self.pointpub = self.create_publisher(Point, '/point', 10)
+        self.pointcmd = Point()
         # Wait for a connection to happen.  This isn't necessary, but
         # means we don't start until the rest of the system is ready.
         self.get_logger().info("Waiting for a /joint_commands subscriber...")
@@ -144,15 +156,18 @@ class DemoNode(Node):
         # Just print the position (for now).
         # print(list(fbkmsg.position))
         self.curr_pos = fbkmsg.position
+        self.curr_vel = fbkmsg.velocity
+        self.curr_eff = fbkmsg.effort
         
     # Receive a point message - called by incoming messages.
+    # rejkavik, iceland a point
     def recvpoint(self, pointmsg):
         # Extract the data.
         x = pointmsg.x
         y = pointmsg.y
         z = pointmsg.z
+        self.queue.append(self.chain.fkin(self.curr_pos)[0].flatten())
         self.queue.append(bound_taskspace(np.array([x,y,z]), self.mag_zeropos))
-        self.queue.append(self.position_wait)
         # self.spline_index += 1
         # self.spline_index %= len(self.positions)
         if self.mode == Mode.JOINT_SPLINE:
@@ -167,6 +182,21 @@ class DemoNode(Node):
         # Report.
         self.get_logger().info("Running point %r, %r, %r" % (x,y,z))
 
+    def is_contacted(self, cmdpos, cmdvel, cmdeff):
+        error_eff = sum(np.abs(np.array(self.curr_eff) - np.array(cmdeff)))
+        error_vel = sum(np.abs(np.array(self.curr_vel) - np.array(cmdvel)))
+        error_pos = sum(np.abs(np.array(self.curr_pos) - np.array(cmdpos)))
+        self.get_logger().info(f"Contact difference {self.thresh_contact - (self.pG * error_pos + self.vG * error_vel + self.eG * error_eff)}")
+        contacted = self.pG * error_pos + self.vG * error_vel + self.eG * error_eff > self.thresh_contact
+        if contacted:
+            self.get_logger().info("Contacted!")
+        return contacted
+
+    def is_stopped(self, thresh = 0.01):
+        y = np.isclose(self.curr_vel, np.array([0, 0, 0]), atol=thresh)
+        self.get_logger().info(f"Stopped Error Diff {self.curr_vel - np.zeros(3)}")
+        return y[0] and y[1] and y[2]
+    
     # Send a command - called repeatedly by the timer.
     def sendcmd(self):
         # Build up the message and publish.
@@ -182,6 +212,9 @@ class DemoNode(Node):
             # self.get_logger().info(str(p_last) + '\n\n\n' + str(v) + '\n\n\n' + str(self.qlast))
 
             q, qdot = self.chain.ikin(1.0 / RATE, np.array(self.qlast).reshape((3,1)), p_last.reshape((3,1)), v.reshape((3,1)))
+        elif self.mode == Mode.CONTACTED:
+            q = np.array([self.qlast[0], np.nan, np.nan])
+            qdot = np.array([np.nan, np.nan, np.nan])
         elif self.mode == Mode.HOLD:
             q, qdot = self.qlast, np.zeros(3)
         elif self.mode == Mode.JOINT_SPLINE:
@@ -190,12 +223,25 @@ class DemoNode(Node):
             self.get_logger().info("I fucked up bad...")
             raise Exception("Zamn")
 
-        if self.mode == Mode.TASK_SPLINE and self.t - self.t0 > self.tmove:
+        if self.mode == Mode.TASK_SPLINE and self.is_contacted(q.flatten(),
+                                                               qdot.flatten(),
+                                                               self.gravity(q.flatten())):
+            self.mode = Mode.CONTACTED
+            self.queue.pop(0) # removes goal position
+            self.queue.pop(0)
+            self.t0 = self.t
+        elif self.mode == Mode.CONTACTED and self.is_stopped():
+            # go back to the hold position from where you are
+            #self.pointcmd.x, self.pointcmd.y, self.pointcmd.z = self.position
+            self.recvpoint(Point(x=float(self.position_wait[0]), y=float(self.position_wait[1]), z=float(self.position_wait[2])))
+            self.get_logger().info("OH NEILLLL")
+        elif self.mode == Mode.TASK_SPLINE and self.t - self.t0 > self.tmove:
+            self.queue.pop(0)
             self.queue.pop(0)
             self.mode = Mode.HOLD
             self.t0 = self.t
             self.tmove = DemoNode.THOLD
-        elif self.mode == Mode.HOLD and self.t - self.t0 > self.tmove and self.t - self.t0 > self.tmove and len(self.queue) > 1:
+        elif self.mode == Mode.HOLD and self.t - self.t0 > self.tmove and len(self.queue) > 1:
             self.mode = Mode.TASK_SPLINE
             self.t0 = self.t
             self.tmove = splinetime(*self.queue[:2],
@@ -208,10 +254,12 @@ class DemoNode(Node):
             self.t0 = self.t
             self.tmove = DemoNode.THOLD
 
-        self.qlast = q
+        if self.mode != Mode.CONTACTED:
+            self.qlast = q
+
         self.cmdmsg.position = q.flatten().tolist()
         self.cmdmsg.velocity = qdot.flatten().tolist()
-        self.cmdmsg.effort = self.gravity(q.flatten().tolist())
+        self.cmdmsg.effort = self.gravity(np.array(self.curr_pos).flatten().tolist())
         self.cmdpub.publish(self.cmdmsg)
 
 

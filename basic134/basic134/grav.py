@@ -144,7 +144,7 @@ class DemoNode(Node):
         self.cmdpub.publish(self.cmdmsg)
 
 
-#
+# mais je suis francais oh honhonhonhonhon
 #   Main Code
 #
 def main(args=None):
