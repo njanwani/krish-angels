@@ -36,7 +36,7 @@ def index():
 def detect_motion(frameCount):
     # grab global references to the video stream, output frame, and
     # lock variables
-    global vs, outputFrame, lock
+    global outputFrame, lock
     while True:
         time.sleep(1 / HZ)
         # read the next frame from the video stream, resize it,

@@ -37,7 +37,7 @@ class DetectorNode(Node):
         super().__init__(name)
 
         # Thresholds in Hmin/max, Smin/max, Vmin/max
-        self.hsvlimits = np.array([[20, 30], [90, 170], [60, 255]])
+        self.hsvlimits = np.array([[20,70], [90, 170], [60, 255]])
 
         # Create a publisher for the processed (debugging) images.
         # Store up to three images, just in case.

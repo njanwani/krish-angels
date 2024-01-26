@@ -79,7 +79,7 @@ class DemoNode(Node):
         # Detection gains for contact detection
         # TODO: TUNE THESE HOES
         self.pG = 10
-        self.vG = 0.9
+        self.vG = 0
         self.eG = 0
         self.thresh_contact = 1
 
@@ -186,6 +186,10 @@ class DemoNode(Node):
         error_eff = sum(np.abs(np.array(self.curr_eff) - np.array(cmdeff)))
         error_vel = sum(np.abs(np.array(self.curr_vel) - np.array(cmdvel)))
         error_pos = sum(np.abs(np.array(self.curr_pos) - np.array(cmdpos)))
+        self.get_logger().info(f"Err Eff {sum(np.array(self.curr_eff) - np.array(cmdeff))}")
+        self.get_logger().info(f"Err Vel {sum(np.array(self.curr_vel) - np.array(cmdvel))}")
+        self.get_logger().info(f"Cmd Vel {cmdvel}")
+        self.get_logger().info(f"Err Pos {sum(np.array(self.curr_pos) - np.array(cmdpos))}")
         self.get_logger().info(f"Contact difference {self.thresh_contact - (self.pG * error_pos + self.vG * error_vel + self.eG * error_eff)}")
         contacted = self.pG * error_pos + self.vG * error_vel + self.eG * error_eff > self.thresh_contact
         if contacted:
@@ -209,7 +213,7 @@ class DemoNode(Node):
             _, v = spline5(self.t + 1.0 / RATE - self.t0, self.tmove, 
                         *self.queue[:2], 0, 0, 0, 0)
             
-            # self.get_logger().info(str(p_last) + '\n\n\n' + str(v) + '\n\n\n' + str(self.qlast))
+            # self.get_logger().info("IKIN INFO" + str(p_last) + '\n\n\n' + str(v) + '\n\n\n' + str(self.qlast))
 
             q, qdot = self.chain.ikin(1.0 / RATE, np.array(self.qlast).reshape((3,1)), p_last.reshape((3,1)), v.reshape((3,1)))
         elif self.mode == Mode.CONTACTED:
@@ -231,10 +235,12 @@ class DemoNode(Node):
             self.queue.pop(0)
             self.t0 = self.t
         elif self.mode == Mode.CONTACTED and self.is_stopped():
-            # go back to the hold position from where you are
-            #self.pointcmd.x, self.pointcmd.y, self.pointcmd.z = self.position
+            q = self.qlast
             self.recvpoint(Point(x=float(self.position_wait[0]), y=float(self.position_wait[1]), z=float(self.position_wait[2])))
+            return
             self.get_logger().info("OH NEILLLL")
+            self.get_logger().info(f"this is q: {q}")
+            self.t0 = self.t
         elif self.mode == Mode.TASK_SPLINE and self.t - self.t0 > self.tmove:
             self.queue.pop(0)
             self.queue.pop(0)
@@ -256,7 +262,7 @@ class DemoNode(Node):
 
         if self.mode != Mode.CONTACTED:
             self.qlast = q
-
+        
         self.cmdmsg.position = q.flatten().tolist()
         self.cmdmsg.velocity = qdot.flatten().tolist()
         self.cmdmsg.effort = self.gravity(np.array(self.curr_pos).flatten().tolist())

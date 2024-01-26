@@ -44,6 +44,12 @@ def generate_launch_description():
         executable = 'hsvtune',
         output     = 'screen',
         remappings = [('/image_raw', '/usb_cam/image_raw')])
+    node_webserver = Node(
+        name       = 'webserver', 
+        package    = 'detectors',
+        executable = 'webserver',
+        output     = 'screen',
+        remappings = [('/image_raw', '/usb_cam/image_raw')])
 
 
     ######################################################################
@@ -55,4 +61,5 @@ def generate_launch_description():
         # Start the nodes.
         node_usbcam,
         node_hsvtune,
+        node_webserver,
     ])
