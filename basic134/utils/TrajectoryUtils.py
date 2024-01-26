@@ -89,7 +89,7 @@ def spline5(t, T, p0, pf, v0, vf, a0, af):
     v =     b     + 2*c * t    + 3*d * t**2 + 4*e * t**3 + 5*f * t**4
     return (p,v)
 
-def splinetime(p0, pf, v0, vf, vmax, amax, cartesian=True):
+def splinetime(p0, pf, v0, vf, vmax=0.8, amax=0.08, cartesian=True):
         if cartesian:
             return max(np.linalg.norm(p0 - pf) * 6, 0.5)
         
