@@ -62,7 +62,7 @@ class DetectorNode(Node):
             Image, '/image_raw', self.process, 1)
 
         # Report.
-        self.get_logger().info("Ball/paper detector running...")
+        # self.get_logger().info("Ball/paper detector running...")
 
     # Shutdown
     def shutdown(self):
@@ -97,8 +97,8 @@ class DetectorNode(Node):
             frame = cv2.line(frame, (0,vc), (W-1,vc), self.white, 1)
 
             # Report the center HSV values.  Note the row comes first.
-            self.get_logger().info(
-                "HSV = (%3d, %3d, %3d)" % tuple(hsv[vc, uc]))
+            # self.get_logger().info(
+            #     "HSV = (%3d, %3d, %3d)" % tuple(hsv[vc, uc]))
 
         
         # Threshold in Hmin/max, Smin/max, Vmin/max
@@ -130,52 +130,52 @@ class DetectorNode(Node):
         if len(contours_puck) > 0:
             # Pick the largest contour.
             contour = max(contours_puck, key=cv2.contourArea)
+            if cv2.contourArea(contour) > 500:
+                # Find the enclosing circle (convert to pixel values)
+                ((ur, vr), radius) = cv2.minEnclosingCircle(contour)
+                x,y,w,h = cv2.boundingRect(contour) 
+                ur     = int(ur)
+                vr     = int(vr)
+                radius = int(radius)
 
-            # Find the enclosing circle (convert to pixel values)
-            ((ur, vr), radius) = cv2.minEnclosingCircle(contour)
-            x,y,w,h = cv2.boundingRect(contour) 
-            ur     = int(ur)
-            vr     = int(vr)
-            radius = int(radius)
-
-            # Draw the circle (yellow) and centroid (red) on the
-            # original image.
-            # cv2.circle(frame, (ur, vr), int(radius), self.yellow,  2)
-            # cv2.circle(frame, (ur, vr), 5,           self.red,    -1)
-            cx, cy = x + (w)//2, y + (h)//2
-            cv2.ellipse(frame, (cx, cy), (w//2, h//2), 0, 0, 360, self.yellow,  2)
-            cv2.circle(frame, (cx, cy), 5,           self.red,    -1)
-            
-            if np.linalg.norm(np.array([msg.x - cx, msg.y - cy])) > 0.3:
-                self.c_found = False
-
-            if not self.c_found:
-                self.msg.x = cx
-                self.msg.y = cy
-                self.msg.z = 0
-                self.pubcirc.publish(self.msg)
-                self.c_found = True
+                # Draw the circle (yellow) and centroid (red) on the
+                # original image.
+                # cv2.circle(frame, (ur, vr), int(radius), self.yellow,  2)
+                # cv2.circle(frame, (ur, vr), 5,           self.red,    -1)
+                cx, cy = x + (w)//2, y + (h)//2
+                cv2.ellipse(frame, (cx, cy), (w//2, h//2), 0, 0, 360, self.yellow,  2)
+                cv2.circle(frame, (cx, cy), 5,           self.red,    -1)
                 
-            # Report.
-            self.get_logger().info(
-                "Found Ball enclosed by radius %d about (%d,%d)" %
-                (radius, ur, vr))
-            
-        if len(contours_paper) > 0:
-            # Pick the largest contour.
-            contour = max(contours_paper, key=cv2.contourArea)
+                if np.linalg.norm(np.array([self.circ_msg.x - cx, self.circ_msg.y - cy])) > 10:
+                    self.c_found = False
 
-            # Find the enclosing circle (convert to pixel values)
-            x,y,w,h = cv2.boundingRect(contour) 
-            
-            rect = cv2.minAreaRect(contour)
-            box = cv2.boxPoints(rect)
-            box = np.int0(box)
-            cv2.drawContours(frame,[box],0,(0,191,255),2)
-            cv2.circle(frame, (x+w//2, y+h//2), 5, self.red, -1)
+                if not self.c_found:
+                    self.circ_msg.x = float(cx)
+                    self.circ_msg.y = float(cy)
+                    self.circ_msg.z = 0.0
+                    self.pubcirc.publish(self.circ_msg)
+                    self.c_found = True
+                    
+                # Report.
+                # self.get_logger().info(
+                #     "Found Ball enclosed by radius %d about (%d,%d)" %
+                #     (radius, ur, vr))
+                
+            if len(contours_paper) > 0:
+                # Pick the largest contour.
+                contour = max(contours_paper, key=cv2.contourArea)
+                if cv2.contourArea(contour) > 2000:
+                    # Find the enclosing circle (convert to pixel values)
+                    x,y,w,h = cv2.boundingRect(contour) 
+                    
+                    rect = cv2.minAreaRect(contour)
+                    box = cv2.boxPoints(rect)
+                    box = np.int0(box)
+                    cv2.drawContours(frame,[box],0,(0,191,255),2)
+                    cv2.circle(frame, (x+w//2, y+h//2), 5, self.red, -1)
 
-            # Report.
-            self.get_logger().info(f"Found Paper enclosed by {(x,y)} and {(y+w, x+h)}")
+                    # Report.
+                    # self.get_logger().info(f"Found Paper enclosed by {(x,y)} and {(y+w, x+h)}")
 
         # Convert the frame back into a ROS image and republish.
         self.pubrgb.publish(self.bridge.cv2_to_imgmsg(frame, "rgb8"))

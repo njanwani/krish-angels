@@ -18,7 +18,7 @@ import time
 RATE = 100.0
 COMMAND_TOPIC = '/joint_commands'
 FEEDBACK_TOPIC = '/joint_states'
-POINT_TOPIC = '/point'
+POINT_TOPIC = '/mapper/circle'
 
 class Mode(Enum):
     JOINT_SPLINE      = 0

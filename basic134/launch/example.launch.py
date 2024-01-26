@@ -103,6 +103,34 @@ def generate_launch_description():
         output     = 'screen',
         remappings = [('/joint_states', '/joint_commands')],
         on_exit    = Shutdown())
+    
+    # Configure the USB camera node
+    node_usbcam = Node(
+        name       = 'usb_cam', 
+        package    = 'usb_cam',
+        executable = 'usb_cam_node_exe',
+        namespace  = 'usb_cam',
+        output     = 'screen',
+        parameters = [{'camera_name':  'logitech'},
+                      {'video_device': '/dev/video0'},
+                      {'pixel_format': 'yuyv2rgb'},
+                      {'image_width':  640},
+                      {'image_height': 480},
+                      {'framerate':    15.0}])
+    # Configure the mapping demostration node
+    node_mapping = Node(
+        name       = 'mapper', 
+        package    = 'detectors',
+        executable = 'mapping',
+        output     = 'screen',
+        remappings = [('/image_raw', '/usb_cam/image_raw')])
+    
+    node_detector = Node(
+        name       = 'mapper', 
+        package    = 'detectors',
+        executable = 'balldetector',
+        output     = 'screen',
+        remappings = [('/image_raw', '/usb_cam/image_raw')])
 
 
     ######################################################################
@@ -126,6 +154,9 @@ def generate_launch_description():
         node_rviz,
         node_hebi,
         node_demo,
+        node_usbcam,
+        node_mapping,
+        node_detector
 
         # # ALTERNATE: Start if we want the GUI to command the robot.
         # # THIS WILL BE **VERY** JITTERY, running at 10Hz!

@@ -44,6 +44,13 @@ def generate_launch_description():
         executable = 'mapping',
         output     = 'screen',
         remappings = [('/image_raw', '/usb_cam/image_raw')])
+    
+    node_detector = Node(
+        name       = 'mapper', 
+        package    = 'detectors',
+        executable = 'balldetector',
+        output     = 'screen',
+        remappings = [('/image_raw', '/usb_cam/image_raw')])
 
 
     ######################################################################
@@ -55,4 +62,5 @@ def generate_launch_description():
         # Start the nodes.
         node_usbcam,
         node_mapping,
+        node_detector
     ])
