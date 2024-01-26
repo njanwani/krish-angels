@@ -126,7 +126,6 @@ class HSVTuneNode(Node):
 
         # Threshold in Hmin/max, Smin/max, Vmin/max
         binary = cv2.inRange(hsv, self.hsvlimits[:,0], self.hsvlimits[:,1])
-
         # Grab the image shape, determine the center pixel.
         (H, W, D) = frame.shape
         uc = W//2
@@ -141,10 +140,10 @@ class HSVTuneNode(Node):
             "Center pixel HSV = (%3d, %3d, %3d)" % tuple(hsv[vc, uc]))
 
         # Convert the frame back into a ROS image and republish.
-        self.pubrgb.publish(self.bridge.cv2_to_imgmsg(frame, "rgb8"))
+        self.pubrgb.publish(self.bridge.cv2_to_imgmsg(np.array(frame), "rgb8"))
 
         # Also publish the thresholded binary (black/white) image.
-        self.pubbin.publish(self.bridge.cv2_to_imgmsg(binary))
+        self.pubbin.publish(self.bridge.cv2_to_imgmsg(binary, 'mono8'))
 
 
 #

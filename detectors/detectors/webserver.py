@@ -78,7 +78,7 @@ class DetectorNode(Node):
         # queue size of one means only the most recent message is
         # stored for the next subscriber callback.
         self.sub = self.create_subscription(
-            Image, '/image_raw', self.process, 1)
+            Image, 'hsvtune/binary', self.process, 1)
 
         # Report.
         self.get_logger().info("Ball detector running...")
@@ -94,14 +94,14 @@ class DetectorNode(Node):
     def process(self, msg):
         global outputFrame
         # Confirm the encoding and report.
-        assert(msg.encoding == "rgb8")
+        assert(msg.encoding == "mono8")
         # self.get_logger().info(
         #     "Image %dx%d, bytes/pixel %d, encoding %s" %
         #     (msg.width, msg.height, msg.step/msg.width, msg.encoding))
 
         # Convert into OpenCV image, using RGB 8-bit (pass-through).
-        frame = self.bridge.imgmsg_to_cv2(msg, "passthrough")
-        frame = frame[:,:,2::-1]
+        frame = self.bridge.imgmsg_to_cv2(msg, "mono8")
+        # frame = frame[:,:,2::-1]
         frame = imutils.resize(frame, width=1000)
         # raise Exception(frame)
         outputFrame = frame.copy()

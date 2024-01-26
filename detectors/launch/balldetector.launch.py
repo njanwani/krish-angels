@@ -41,7 +41,7 @@ def generate_launch_description():
     node_balldetector = Node(
         name       = 'balldetector', 
         package    = 'detectors',
-        executable = 'trial', #'balldetector',
+        executable = 'balldetector',
         output     = 'screen',
         remappings = [('/image_raw', '/usb_cam/image_raw')])
 

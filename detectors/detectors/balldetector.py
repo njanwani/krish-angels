@@ -18,6 +18,7 @@ import cv_bridge
 
 from rclpy.node         import Node
 from sensor_msgs.msg    import Image
+from geometry_msgs.msg  import Point, Pose
 
 
 #
@@ -35,14 +36,21 @@ class DetectorNode(Node):
     def __init__(self, name):
         # Initialize the node, naming it as specified
         super().__init__(name)
-
+        self.c_found = False
+        self.r_found = False
         # Thresholds in Hmin/max, Smin/max, Vmin/max
-        self.hsvlimits = np.array([[25,45], [100, 255], [100, 255]])
+        self.hsvlimits_puck = np.array([[5, 20], [150, 255], [100, 200]])
+        self.hsvlimits_paper = np.array([[0, 15], [59, 127], [125, 172]])
 
         # Create a publisher for the processed (debugging) images.
         # Store up to three images, just in case.
         self.pubrgb = self.create_publisher(Image, name+'/image_raw', 3)
         self.pubbin = self.create_publisher(Image, name+'/binary',    3)
+        self.pubrec = self.create_publisher(Pose, name+'/rectangle',    3)
+        self.pubcirc = self.create_publisher(Point, name+'/circle',    3)
+        
+        self.circ_msg = Point()
+        self.rec_msg = Pose()
 
         # Set up the OpenCV bridge.
         self.bridge = cv_bridge.CvBridge()
@@ -54,7 +62,7 @@ class DetectorNode(Node):
             Image, '/image_raw', self.process, 1)
 
         # Report.
-        self.get_logger().info("Ball detector running...")
+        self.get_logger().info("Ball/paper detector running...")
 
     # Shutdown
     def shutdown(self):
@@ -94,50 +102,87 @@ class DetectorNode(Node):
 
         
         # Threshold in Hmin/max, Smin/max, Vmin/max
-        binary = cv2.inRange(hsv, self.hsvlimits[:,0], self.hsvlimits[:,1])
+        binary_puck = cv2.inRange(hsv, self.hsvlimits_puck[:,0], self.hsvlimits_puck[:,1])
+        binary_paper = cv2.inRange(hsv, self.hsvlimits_paper[:,0], self.hsvlimits_paper[:,1])
 
         # Erode and Dilate. Definitely adjust the iterations!
-        iter = 4
-        binary = cv2.erode(binary, None, iterations=iter)
-        binary = cv2.dilate(binary, None, iterations=2*iter)
-        binary = cv2.erode(binary, None, iterations=iter)
+        iter = 1
+        binary_puck = cv2.erode(binary_puck, None, iterations=iter)
+        binary_puck = cv2.dilate(binary_puck, None, iterations=iter)
 
+        binary_paper = cv2.erode(binary_paper, None, iterations=iter)
+        binary_paper = cv2.dilate(binary_paper, None, iterations=iter)
 
         # Find contours in the mask and initialize the current
         # (x, y) center of the ball
-        (contours, hierarchy) = cv2.findContours(
-            binary, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
+        (contours_puck, hierarchy) = cv2.findContours(
+            binary_puck, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
+        
+        (contours_paper, hierarchy) = cv2.findContours(
+            binary_paper, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
 
         # Draw all contours on the original image for debugging.
-        cv2.drawContours(frame, contours, -1, self.blue, 2)
+        cv2.drawContours(frame, contours_puck, -1, self.blue, 2)
+        cv2.drawContours(frame, contours_paper, -1, self.red, 2)
 
         # Only proceed if at least one contour was found.  You may
-        # also want to loop over the contours...
-        if len(contours) > 0:
+        # also want to loop over the contours_puck...
+        if len(contours_puck) > 0:
             # Pick the largest contour.
-            contour = max(contours, key=cv2.contourArea)
+            contour = max(contours_puck, key=cv2.contourArea)
 
             # Find the enclosing circle (convert to pixel values)
             ((ur, vr), radius) = cv2.minEnclosingCircle(contour)
+            x,y,w,h = cv2.boundingRect(contour) 
             ur     = int(ur)
             vr     = int(vr)
             radius = int(radius)
 
             # Draw the circle (yellow) and centroid (red) on the
             # original image.
-            cv2.circle(frame, (ur, vr), int(radius), self.yellow,  2)
-            cv2.circle(frame, (ur, vr), 5,           self.red,    -1)
+            # cv2.circle(frame, (ur, vr), int(radius), self.yellow,  2)
+            # cv2.circle(frame, (ur, vr), 5,           self.red,    -1)
+            cx, cy = x + (w)//2, y + (h)//2
+            cv2.ellipse(frame, (cx, cy), (w//2, h//2), 0, 0, 360, self.yellow,  2)
+            cv2.circle(frame, (cx, cy), 5,           self.red,    -1)
+            
+            if np.linalg.norm(np.array([msg.x - cx, msg.y - cy])) > 0.3:
+                self.c_found = False
 
+            if not self.c_found:
+                self.msg.x = cx
+                self.msg.y = cy
+                self.msg.z = 0
+                self.pubcirc.publish(self.msg)
+                self.c_found = True
+                
             # Report.
             self.get_logger().info(
                 "Found Ball enclosed by radius %d about (%d,%d)" %
                 (radius, ur, vr))
+            
+        if len(contours_paper) > 0:
+            # Pick the largest contour.
+            contour = max(contours_paper, key=cv2.contourArea)
+
+            # Find the enclosing circle (convert to pixel values)
+            x,y,w,h = cv2.boundingRect(contour) 
+            
+            rect = cv2.minAreaRect(contour)
+            box = cv2.boxPoints(rect)
+            box = np.int0(box)
+            cv2.drawContours(frame,[box],0,(0,191,255),2)
+            cv2.circle(frame, (x+w//2, y+h//2), 5, self.red, -1)
+
+            # Report.
+            self.get_logger().info(f"Found Paper enclosed by {(x,y)} and {(y+w, x+h)}")
 
         # Convert the frame back into a ROS image and republish.
         self.pubrgb.publish(self.bridge.cv2_to_imgmsg(frame, "rgb8"))
 
-        # Also publish the binary (black/white) image.
-        self.pubbin.publish(self.bridge.cv2_to_imgmsg(binary))
+        # Also publish the binary_puck (black/white) image.
+        self.pubbin.publish(self.bridge.cv2_to_imgmsg(binary_puck))
+        self.pubbin.publish(self.bridge.cv2_to_imgmsg(binary_paper))
 
 
 #
