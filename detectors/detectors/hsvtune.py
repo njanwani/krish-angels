@@ -48,23 +48,24 @@ class HSVTracker():
     def __init__(self, hsvlimits):
         # Create a controls window for the trackbars.
         winname = 'Controls'
-        cv2.namedWindow(winname)
+        # cv2.namedWindow(winname)
 
-        # Show the control window.  Note this won't actually appear/
-        # update (draw on screen) until waitKey(1) is called below.
-        cv2.imshow(winname, np.zeros((1, 500, 3), np.uint8))
+        # # Show the control window.  Note this won't actually appear/
+        # # update (draw on screen) until waitKey(1) is called below.
+        # cv2.imshow(winname, np.zeros((1, 500, 3), np.uint8))
 
-        # Create trackbars for each limit.
-        TrackBar(winname, 'Lower H', hsvlimits, 0, 0, 179)
-        TrackBar(winname, 'Upper H', hsvlimits, 0, 1, 179)
-        TrackBar(winname, 'Lower S', hsvlimits, 1, 0, 255)
-        TrackBar(winname, 'Upper S', hsvlimits, 1, 1, 255)
-        TrackBar(winname, 'Lower V', hsvlimits, 2, 0, 255)
-        TrackBar(winname, 'Upper V', hsvlimits, 2, 1, 255)
+        # # Create trackbars for each limit.
+        # TrackBar(winname, 'Lower H', hsvlimits, 0, 0, 179)
+        # TrackBar(winname, 'Upper H', hsvlimits, 0, 1, 179)
+        # TrackBar(winname, 'Lower S', hsvlimits, 1, 0, 255)
+        # TrackBar(winname, 'Upper S', hsvlimits, 1, 1, 255)
+        # TrackBar(winname, 'Lower V', hsvlimits, 2, 0, 255)
+        # TrackBar(winname, 'Upper V', hsvlimits, 2, 1, 255)
 
     def update(self):
         # Call waitKey(1) to force the window to update.
-        cv2.waitKey(1)
+        # cv2.waitKey(1)
+        pass
 
 
 #

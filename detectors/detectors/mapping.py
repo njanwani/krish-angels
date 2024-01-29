@@ -183,7 +183,6 @@ class DemoNode(Node):
         self.pubrgb.publish(self.bridge.cv2_to_imgmsg(image, "rgb8"))
 
     def cb_circle(self, msg: Point):
-        ros_print(self, f'\n\n\n\n\n{(msg.x, msg.y)}\n\n\n\n')
         # center = self.pixelToWorld(self.image.copy(), msg.x, msg.y, self.x0, self.y0)
         self.uc = int(msg.x)
         self.vc = int(msg.y)

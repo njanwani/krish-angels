@@ -1,18 +1,38 @@
 
 <html>
   <head>
-    <title>Pi Video Surveillance</title>
+    <title>Data Video Surveillance</title>
     <style>
       img {
         display: block;
         margin-left: auto;
         margin-right: auto;
       }
+      /* Three image containers (use 25% for four, and 50% for two, etc) */
+      .column {
+        float: left;
+        width: 33.33%;
+        padding: 5px;
+      }
+
+      /* Clear floats after image containers */
+      .row::after {
+        content: "";
+        clear: both;
+        display: table;
+      }
       </style>
   </head>
 
-  <body>
-    <h1>Pi Video Surveillance</h1>
-    <img src="{{ url_for('video_feed') }}" class = "center">
-  </body>
+  <div class="row">
+    <div class="column">
+      <img src="{{ url_for('feed1') }}">
+    </div>
+    <div class="column">
+      <img src="{{ url_for('feed2') }}">
+    </div>
+    <div class="column">
+      <img src="{{ url_for('feed3') }}">
+    </div>
+  </div>
 </html>

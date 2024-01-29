@@ -15,11 +15,14 @@ import numpy as np
 # ROS Imports
 import rclpy
 import cv_bridge
+from utils.pyutils import *
 
 from rclpy.node         import Node
 from sensor_msgs.msg    import Image
 from geometry_msgs.msg  import Point, Pose
+from nav_msgs.msg       import Odometry
 
+FPS = 15.0
 
 #
 #  Detector Node Class
@@ -36,8 +39,11 @@ class DetectorNode(Node):
     def __init__(self, name):
         # Initialize the node, naming it as specified
         super().__init__(name)
+
+        # flags for the circle and rectangle variables
         self.c_found = False
         self.r_found = False
+
         # Thresholds in Hmin/max, Smin/max, Vmin/max
         self.hsvlimits_puck = np.array([[5, 20], [150, 255], [100, 200]])
         self.hsvlimits_paper = np.array([[0, 15], [59, 127], [125, 172]])
@@ -45,15 +51,29 @@ class DetectorNode(Node):
         # Create a publisher for the processed (debugging) images.
         # Store up to three images, just in case.
         self.pubrgb = self.create_publisher(Image, name+'/image_raw', 3)
-        self.pubbin = self.create_publisher(Image, name+'/binary',    3)
         self.pubrec = self.create_publisher(Pose, name+'/rectangle',    3)
         self.pubcirc = self.create_publisher(Point, name+'/circle',    3)
+        self.pubrecimg = self.create_publisher(Image, name+'/binary_rectangle', 3)
+        self.pubcircimg = self.create_publisher(Image, name+'/binary_circle', 3)
         
         self.circ_msg = Point()
         self.rec_msg = Pose()
 
         # Set up the OpenCV bridge.
         self.bridge = cv_bridge.CvBridge()
+
+        # camera space to world frame transformation variables
+        self.x0 = 0.321
+        self.y0 = 0.0
+
+        self.pubstate = self.create_publisher(Odometry, name + '/puck_state', 3)
+        self.odom_msg = Odometry()
+        self.prev_pos = (np.nan, np.nan)
+
+        # only publish on the pubcirc and pubrec publishers if there is something
+        # new to send
+        self.newData = True
+        self.canPublish = False
 
         # Finally, subscribe to the incoming image topic.  Using a
         # queue size of one means only the most recent message is
@@ -74,14 +94,8 @@ class DetectorNode(Node):
     def process(self, msg):
         # Confirm the encoding and report.
         assert(msg.encoding == "rgb8")
-        # self.get_logger().info(
-        #     "Image %dx%d, bytes/pixel %d, encoding %s" %
-        #     (msg.width, msg.height, msg.step/msg.width, msg.encoding))
 
-        # Convert into OpenCV image, using RGB 8-bit (pass-through).
         frame = self.bridge.imgmsg_to_cv2(msg, "passthrough")
-
-        # Convert to HSV
         hsv = cv2.cvtColor(frame, cv2.COLOR_RGB2HSV)
         # hsv = cv2.cvtColor(frame, cv2.COLOR_BGR2HSV)  # Cheat: swap red/blue
 
@@ -89,17 +103,6 @@ class DetectorNode(Node):
         (H, W, D) = frame.shape
         uc = W//2
         vc = H//2
-
-        # Help to determine the HSV range...
-        if True:
-            # Draw the center lines.  Note the row is the first dimension.
-            frame = cv2.line(frame, (uc,0), (uc,H-1), self.white, 1)
-            frame = cv2.line(frame, (0,vc), (W-1,vc), self.white, 1)
-
-            # Report the center HSV values.  Note the row comes first.
-            # self.get_logger().info(
-            #     "HSV = (%3d, %3d, %3d)" % tuple(hsv[vc, uc]))
-
         
         # Threshold in Hmin/max, Smin/max, Vmin/max
         binary_puck = cv2.inRange(hsv, self.hsvlimits_puck[:,0], self.hsvlimits_puck[:,1])
@@ -140,26 +143,27 @@ class DetectorNode(Node):
 
                 # Draw the circle (yellow) and centroid (red) on the
                 # original image.
-                # cv2.circle(frame, (ur, vr), int(radius), self.yellow,  2)
-                # cv2.circle(frame, (ur, vr), 5,           self.red,    -1)
                 cx, cy = x + (w)//2, y + (h)//2
                 cv2.ellipse(frame, (cx, cy), (w//2, h//2), 0, 0, 360, self.yellow,  2)
                 cv2.circle(frame, (cx, cy), 5,           self.red,    -1)
-                
-                if np.linalg.norm(np.array([self.circ_msg.x - cx, self.circ_msg.y - cy])) > 30:
-                    self.c_found = False
 
-                if not self.c_found:
-                    self.circ_msg.x = float(cx)
-                    self.circ_msg.y = float(cy)
-                    self.circ_msg.z = 0.0
-                    self.pubcirc.publish(self.circ_msg)
-                    self.c_found = True
-                    
-                # Report.
-                # self.get_logger().info(
-                #     "Found Ball enclosed by radius %d about (%d,%d)" %
-                #     (radius, ur, vr))
+                xyCenter = self.pixelToWorld(frame, cx, cy, self.x0, self.y0)
+                if xyCenter is None:
+                    ros_print(self, "Unable to execute mapping for circle")
+                else:
+                    (xc, yc) = xyCenter
+                    ros_print(self, "Camera pointed at (%f,%f)" % (xc, yc))
+                    v = 1000/FPS * np.linalg.norm(np.subtract(self.prev_pos, (xc, yc)))
+                    ros_print(self, "Puck velocity is %f" % v)
+                    self.prev_pos = (xc, yc)
+                    if not self.canPublish and v > 0.2:
+                        self.canPublish = True
+                    elif self.canPublish and np.isclose(v, 0.0, atol = 0.1):
+                        self.circ_msg = Point()
+                        self.circ_msg.x = float(xc)
+                        self.circ_msg.y = float(yc)
+                        self.canPublish = False
+                        self.pubcirc.publish(self.circ_msg)
                 
             if len(contours_paper) > 0:
                 # Pick the largest contour.
@@ -178,12 +182,71 @@ class DetectorNode(Node):
                     # self.get_logger().info(f"Found Paper enclosed by {(x,y)} and {(y+w, x+h)}")
 
         # Convert the frame back into a ROS image and republish.
+        frame = cv2.line(frame, (uc,0), (uc,H-1), self.white, 1)
+        frame = cv2.line(frame, (0,vc), (W-1,vc), self.white, 1)
         self.pubrgb.publish(self.bridge.cv2_to_imgmsg(frame, "rgb8"))
+        self.pubrecimg.publish(self.bridge.cv2_to_imgmsg(binary_paper, "mono8"))
+        self.pubcircimg.publish(self.bridge.cv2_to_imgmsg(binary_puck, "mono8"))
 
-        # Also publish the binary_puck (black/white) image.
-        self.pubbin.publish(self.bridge.cv2_to_imgmsg(binary_puck))
-        self.pubbin.publish(self.bridge.cv2_to_imgmsg(binary_paper))
 
+# Pixel Conversion
+    def pixelToWorld(self, image, u, v, x0, y0, annotateImage=True):
+        '''
+        Convert the (u,v) pixel position into (x,y) world coordinates
+        Inputs:
+          image: The image as seen by the camera
+          u:     The horizontal (column) pixel coordinate
+          v:     The vertical (row) pixel coordinate
+          x0:    The x world coordinate in the center of the marker paper
+          y0:    The y world coordinate in the center of the marker paper
+          annotateImage: Annotate the image with the marker information
+
+        Outputs:
+          point: The (x,y) world coordinates matching (u,v), or None
+
+        Return None for the point if not all the Aruco markers are detected
+        '''
+
+        # Detect the Aruco markers (using the 4X4 dictionary).
+        markerCorners, markerIds, _ = cv2.aruco.detectMarkers(
+            image, cv2.aruco.getPredefinedDictionary(cv2.aruco.DICT_4X4_50))
+        if annotateImage:
+            cv2.aruco.drawDetectedMarkers(image, markerCorners, markerIds)
+
+        # Abort if not all markers are detected.
+        if (markerIds is None or len(markerIds) != 4 or
+            set(markerIds.flatten()) != set([1,2,3,4])):
+            return None
+
+
+        # Determine the center of the marker pixel coordinates.
+        uvMarkers = np.zeros((4,2), dtype='float32')
+        for i in range(4):
+            uvMarkers[markerIds[i]-1,:] = np.mean(markerCorners[i], axis=1)
+
+        # Calculate the matching World coordinates of the 4 Aruco markers.
+        DX = 0.1016
+        DY = 0.06985
+        xyMarkers = np.float32([[x0+dx, y0+dy] for (dx, dy) in
+                                [(-DX, DY), (DX, DY), (-DX, -DY), (DX, -DY)]])
+
+
+        # Create the perspective transform.
+        M = cv2.getPerspectiveTransform(uvMarkers, xyMarkers)
+
+        # Map the object in question.
+        uvObj = np.float32([u, v])
+        xyObj = cv2.perspectiveTransform(uvObj.reshape(1,1,2), M).reshape(2)
+
+
+        # Mark the detected coordinates.
+        if annotateImage:
+            # cv2.circle(image, (u, v), 5, (0, 0, 0), -1)
+            s = "(%7.4f, %7.4f)" % (xyObj[0], xyObj[1])
+            cv2.putText(image, s, (u-80, v-8), cv2.FONT_HERSHEY_SIMPLEX,
+                        0.5, (255, 0, 0), 2, cv2.LINE_AA)
+
+        return xyObj
 
 #
 #   Main Code
