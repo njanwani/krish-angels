@@ -16,9 +16,11 @@ import numpy as np
 import time
 
 RATE = 100.0
+RECT_WIDTH = 115 * 10**(-3) * 0.5 #26
 COMMAND_TOPIC = '/joint_commands'
 FEEDBACK_TOPIC = '/joint_states'
-POINT_TOPIC = '/balldetector/circle'
+CIRC_TOPIC = '/balldetector/circle'
+RECT_TOPIC = 'balldetector/rectangle'
 
 class Mode(Enum):
     JOINT_SPLINE      = 0
@@ -63,7 +65,7 @@ class DemoNode(Node):
 
         # setup beginning motion in JS
         self.mode = Mode.JOINT_SPLINE
-        self.t = time.time()
+        self.t = 0 #time.time()
         self.t0 = self.t
         self.tmove = splinetime(self.curr_pos,      # p0    
                                 self.joint_wait,    # pf
@@ -73,14 +75,14 @@ class DemoNode(Node):
 
         # Detection gains for contact detection
         # TODO: TUNE THESE HOES
-        self.pG = 12    # position
-        self.vG = 1.5   # velocity
-        self.eG = 0.05     # effort
+        self.pG = 0    # position
+        self.vG = 0 #1.5   # velocity
+        self.eG = 1.0     # effort
         self.thresh_contact = 1
 
         # Gravity compenstation gains
-        self.B = 1.4
-        self.C = 0.3
+        self.B = 1.5
+        self.C = 0.1
 
         # Create a message and publisher to send the joint commands.
         self.cmdmsg = JointState()
@@ -99,7 +101,10 @@ class DemoNode(Node):
             pass
 
         # Create a subscriber to receive point messages.
-        self.fbksub = self.create_subscription(Point, POINT_TOPIC, self.recvpoint, 10)
+        self.circsub = self.create_subscription(Point, CIRC_TOPIC, self.recvcirc, 10)
+        
+        # Create a subscriber to receive point messages.
+        self.rectsub = self.create_subscription(Pose, RECT_TOPIC, self.recvrect, 10)
 
         # Create a subscriber to continually receive joint state messages.
         self.fbksub = self.create_subscription(JointState, FEEDBACK_TOPIC, self.recvfbk, 10)
@@ -110,7 +115,7 @@ class DemoNode(Node):
     
     def gravity(self, pos):
         humerus_component = float(self.B * np.cos(pos[1]))
-        forearm_component = float(max(0, self.C * np.cos(pos[1]) * np.cos(pos[2])))
+        forearm_component = float(self.C * np.cos(pos[1] + pos[2])) #* np.cos(pos[2])))
         return np.array([0.0, humerus_component + forearm_component, 0.0])
     
     def shutdown(self):
@@ -139,35 +144,31 @@ class DemoNode(Node):
         self.qdot_filter = self.qdot_filter + (0.01 / self.qdot_T * (self.curr_vel - self.qdot_filter))
         
     # rejkavik, iceland a point
-    def recvpoint(self, pointmsg):
+    def recvcirc(self, pointmsg):
         # Receive a point message - called by incoming messages.
         x, y, z = pointmsg.x, pointmsg.y, pointmsg.z
-
-        # self.queue.append(self.chain.fkin(self.curr_pos)[0].flatten())
         self.queue.append(bound_taskspace(np.array([x,y,z]), self.mag_zeropos))
-
-        # if self.mode != Mode.JOINT_SPLINE:
-        #     self.mode = Mode.TASK_SPLINE
-        #     self.t0 = self.t
-        #     self.tmove = splinetime(*self.queue[:2],
-        #                             np.zeros(3),
-        #                             np.zeros(3),
-        #                             DemoNode.VMAX,
-        #                             DemoNode.AMAX)
+    
+    def recvrect(self, msg: Pose):
+        # Receive a point message - called by incoming messages.
+        x, y, z = msg.position.x, msg.position.y, msg.position.z
+        theta = msg.orientation.z
+        p1 = RECT_WIDTH * np.array([np.cos(theta), np.sin(theta), 0]) + np.array([x,y,z])
+        p2 = np.array([x,y,z + 0.03])
+        p3 = RECT_WIDTH * np.array([np.cos(theta + np.pi), np.sin(theta + np.pi), 0]) + np.array([x,y,z])
+        self.queue.append(bound_taskspace(p1, self.mag_zeropos))
+        self.queue.append(bound_taskspace(p2, self.mag_zeropos))
+        self.queue.append(bound_taskspace(p3, self.mag_zeropos))
 
     def is_contacted(self, cmdpos, cmdvel, cmdeff):
         error_eff = sum(np.abs(self.curr_eff - cmdeff))
         error_vel = sum(np.abs(self.curr_vel - cmdvel))
         error_pos = sum(np.abs(self.curr_pos - cmdpos))
-        # ros_print(self, f"Err Eff {sum(np.array(self.curr_eff) - np.array(cmdeff))}")
-        # ros_print(self, f"Err Vel {sum(np.array(self.curr_vel) - np.array(cmdvel))}")
-        # ros_print(self, f"Cmd Vel {self.curr_vel}")
-        # ros_print(self, f"Cmd Vel {cmdvel}")
-        # ros_print(self, f"Err Pos {sum(np.array(self.curr_pos) - np.array(cmdpos))}")
-        # ros_print(self, f"Contact difference {self.thresh_contact - (self.pG * error_pos + self.vG * error_vel + self.eG * error_eff)}")
         contacted = self.pG * error_pos + self.vG * error_vel + self.eG * error_eff > self.thresh_contact
+        # ros_print(self, str(cmdpos - self.curr_pos))
+        
         if contacted:
-            ros_print(self, 'Contacted!')
+            self.queue = []
 
         return contacted
 
@@ -231,7 +232,7 @@ class DemoNode(Node):
     
     def sendcmd(self):
         # Send a command - called repeatedly by the timer.
-        self.t = time.time()
+        self.t += 0.01
         self.cmdmsg.header.stamp = self.get_clock().now().to_msg()
         self.cmdmsg.name         = ['base', 'shoulder', 'elbow']
         if self.mode == Mode.TASK_SPLINE:

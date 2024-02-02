@@ -126,7 +126,7 @@ def generate_launch_description():
         remappings = [('/image_raw', '/usb_cam/image_raw')])
     
     node_detector = Node(
-        name       = 'mapper', 
+        name       = 'detector', 
         package    = 'detectors',
         executable = 'balldetector',
         output     = 'screen',
@@ -158,11 +158,11 @@ def generate_launch_description():
 
         # # STEP 3: Start if we want the demo code to command the robot.
         node_robot_state_publisher_ACTUAL,
-        node_rviz,
+        # node_rviz,
         node_hebi,
         node_demo,
         node_usbcam,
-        node_mapping,
+        # node_mapping,
         node_detector,
         node_webserver
 

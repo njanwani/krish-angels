@@ -51,7 +51,7 @@ class DetectorNode(Node):
         # Create a publisher for the processed (debugging) images.
         # Store up to three images, just in case.
         self.pubrgb = self.create_publisher(Image, name+'/image_raw', 3)
-        self.pubrec = self.create_publisher(Pose, name+'/rectangle',    3)
+        self.pubrect = self.create_publisher(Pose, name+'/rectangle',    3)
         self.pubcirc = self.create_publisher(Point, name+'/circle',    3)
         self.pubrecimg = self.create_publisher(Image, name+'/binary_rectangle', 3)
         self.pubcircimg = self.create_publisher(Image, name+'/binary_circle', 3)
@@ -63,17 +63,19 @@ class DetectorNode(Node):
         self.bridge = cv_bridge.CvBridge()
 
         # camera space to world frame transformation variables
-        self.x0 = 0.321
-        self.y0 = 0.0
+        self.x0 = 0.323
+        self.y0 = -0.002
 
         self.pubstate = self.create_publisher(Odometry, name + '/puck_state', 3)
         self.odom_msg = Odometry()
-        self.prev_pos = (np.nan, np.nan)
+        self.prev_circ_pos = (np.nan, np.nan)
+        self.prev_rect_pos = (np.nan, np.nan)
 
         # only publish on the pubcirc and pubrec publishers if there is something
         # new to send
         self.newData = True
-        self.canPublish = False
+        self.canPublishCirc = False
+        self.canPublishRect = True
 
         # Finally, subscribe to the incoming image topic.  Using a
         # queue size of one means only the most recent message is
@@ -133,7 +135,7 @@ class DetectorNode(Node):
         if len(contours_puck) > 0:
             # Pick the largest contour.
             contour = max(contours_puck, key=cv2.contourArea)
-            if cv2.contourArea(contour) > 500:
+            if cv2.contourArea(contour) > 250:
                 # Find the enclosing circle (convert to pixel values)
                 ((ur, vr), radius) = cv2.minEnclosingCircle(contour)
                 x,y,w,h = cv2.boundingRect(contour) 
@@ -152,34 +154,64 @@ class DetectorNode(Node):
                     ros_print(self, "Unable to execute mapping for circle")
                 else:
                     (xc, yc) = xyCenter
-                    ros_print(self, "Camera pointed at (%f,%f)" % (xc, yc))
-                    v = 1000/FPS * np.linalg.norm(np.subtract(self.prev_pos, (xc, yc)))
-                    ros_print(self, "Puck velocity is %f" % v)
-                    self.prev_pos = (xc, yc)
-                    if not self.canPublish and v > 0.2:
-                        self.canPublish = True
-                    elif self.canPublish and np.isclose(v, 0.0, atol = 0.1):
+                    # ros_print(self, "Camera pointed at (%f,%f)" % (xc, yc))
+                    v = 1000/FPS * np.linalg.norm(np.subtract(self.prev_circ_pos, (xc, yc)))
+                    # ros_print(self, "Puck velocity is %f" % v)
+                    self.prev_circ_pos = (xc, yc)
+                    if not self.canPublishCirc and v > 0.2:
+                        self.canPublishCirc = True
+                    elif self.canPublishCirc and np.isclose(v, 0.0, atol = 0.1):
                         self.circ_msg = Point()
                         self.circ_msg.x = float(xc)
                         self.circ_msg.y = float(yc)
-                        self.canPublish = False
+                        self.circ_msg.z = 0.02
+                        self.canPublishCirc = False
                         self.pubcirc.publish(self.circ_msg)
                 
-            if len(contours_paper) > 0:
-                # Pick the largest contour.
-                contour = max(contours_paper, key=cv2.contourArea)
-                if cv2.contourArea(contour) > 500:
-                    # Find the enclosing circle (convert to pixel values)
-                    x,y,w,h = cv2.boundingRect(contour) 
-                    
-                    rect = cv2.minAreaRect(contour)
-                    box = cv2.boxPoints(rect)
-                    box = np.int0(box)
-                    cv2.drawContours(frame,[box],0,(0,191,255),2)
-                    cv2.circle(frame, (x+w//2, y+h//2), 5, self.red, -1)
+        if len(contours_paper) > 0:
+            # Pick the largest contour.
+            contour = max(contours_paper, key=cv2.contourArea)
+            if cv2.contourArea(contour) > 500:
+                # Find the enclosing circle (convert to pixel values)
+                x,y,w,h = cv2.boundingRect(contour) 
+                rect = cv2.minAreaRect(contour)
+                box = cv2.boxPoints(rect)
+                box = np.int0(box)
+                cv2.drawContours(frame,[box],0,(0,191,255),2)
+                rx, ry = (x+w//2, y+h//2)
+                cv2.circle(frame, (rx, ry), 5, self.red, -1)
+                # ros_print(self, f'theta: {rect[2]}')
+                r_world = np.zeros((4,2))
+                w_norm = np.linalg.norm(np.subtract(box[0], box[1]))
+                h_norm = np.linalg.norm(np.subtract(box[1], box[2]))
+                for i, (pt, col) in enumerate(zip(box, [self.green, self.red, self.blue, self.yellow])):
+                    cv2.circle(frame, (int(pt[0]), int(pt[1])), 5, col, -1)
+                    r_world[i, :] = self.pixelToWorld(frame, *pt, self.x0, self.y0)
+                r_world = np.array(r_world)   
+                xyCenter = self.pixelToWorld(frame, rx, ry, self.x0, self.y0)
+                add = 0 if w_norm < h_norm else np.pi / 2
+                if xyCenter is None:
+                    ros_print(self, "Unable to execute mapping for rectangle")
+                else:
+                    (xc, yc) = xyCenter
+                    # ros_print(self, "Camera pointed at (%f,%f)" % (xc, yc))
+                    v = 1000/FPS * np.linalg.norm(np.subtract(self.prev_rect_pos, (xc, yc)))
+                    theta = np.arctan2(*(r_world[0,::-1] - r_world[-1,::-1])) + add
+                    # ros_print(self, f'theta: {theta}')
+                    self.prev_rect_pos = (xc, yc)
+                    # if not self.canPublishRect and v > 50:
+                    #     self.canPublishRect = True
+                    if self.canPublishRect and np.isclose(v, 0.0, atol = 0.1):
+                        self.rect_msg = Pose()
+                        self.rect_msg.position.x = float(xc)
+                        self.rect_msg.position.y = float(yc)
+                        self.rect_msg.position.z = 0.01
+                        self.rect_msg.orientation.z = float(theta)
+                        self.canPublishRect = False
+                        self.pubrect.publish(self.rect_msg)
 
-                    # Report.
-                    # self.get_logger().info(f"Found Paper enclosed by {(x,y)} and {(y+w, x+h)}")
+                # Report.
+                # self.get_logger().info(f"Found Paper enclosed by {(x,y)} and {(y+w, x+h)}")
 
         # Convert the frame back into a ROS image and republish.
         frame = cv2.line(frame, (uc,0), (uc,H-1), self.white, 1)
@@ -190,7 +222,7 @@ class DetectorNode(Node):
 
 
 # Pixel Conversion
-    def pixelToWorld(self, image, u, v, x0, y0, annotateImage=True):
+    def pixelToWorld(self, image, u, v, x0, y0, annotateImage=False):
         '''
         Convert the (u,v) pixel position into (x,y) world coordinates
         Inputs:
