@@ -16,7 +16,7 @@ import numpy as np
 import time
 
 RATE = 100.0
-RECT_WIDTH = 115 * 10**(-3) * 0.5 #26
+RECT_WIDTH = 26 * 10**(-3) * 0.5 #26
 COMMAND_TOPIC = '/joint_commands'
 FEEDBACK_TOPIC = '/joint_states'
 CIRC_TOPIC = '/balldetector/circle'
@@ -153,9 +153,9 @@ class DemoNode(Node):
         # Receive a point message - called by incoming messages.
         x, y, z = msg.position.x, msg.position.y, msg.position.z
         theta = msg.orientation.z
-        p1 = RECT_WIDTH * np.array([np.cos(theta), np.sin(theta), 0]) + np.array([x,y,z])
+        p1 = RECT_WIDTH * np.array([np.sin(theta), np.cos(theta), 0]) + np.array([x,y,z])
         p2 = np.array([x,y,z + 0.03])
-        p3 = RECT_WIDTH * np.array([np.cos(theta + np.pi), np.sin(theta + np.pi), 0]) + np.array([x,y,z])
+        p3 = RECT_WIDTH * np.array([np.sin(theta + np.pi), np.cos(theta + np.pi), 0]) + np.array([x,y,z])
         self.queue.append(bound_taskspace(p1, self.mag_zeropos))
         self.queue.append(bound_taskspace(p2, self.mag_zeropos))
         self.queue.append(bound_taskspace(p3, self.mag_zeropos))

@@ -40,11 +40,11 @@ class WebNode(Node):
         self.bridge = cv_bridge.CvBridge()
         self.lock = threading.Lock()
         self.sub_im1 = self.create_subscription(
-            Image, 'balldetector/image_raw', lambda msg: self.cb_image(msg, 0), 1)
+            Image, 'puckdetector/image_raw', lambda msg: self.cb_image(msg, 0), 1)
         self.sub_im2 = self.create_subscription(
-            Image, 'balldetector/binary_circle', lambda msg: self.cb_image(msg, 1), 1)
+            Image, 'puckdetector/binary_circle', lambda msg: self.cb_image(msg, 1), 1)
         self.sub_im3 = self.create_subscription(
-            Image, 'balldetector/binary_rectangle', lambda msg: self.cb_image(msg, 2), 1)
+            Image, 'puckdetector/binary_rectangle', lambda msg: self.cb_image(msg, 2), 1)
         self.frames = [None]*3
         # Report.
         self.get_logger().info("Webserver running...")

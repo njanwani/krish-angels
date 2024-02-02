@@ -26,6 +26,7 @@ setup(
             'hsvtune       = detectors.hsvtune:main',
             'mapping       = detectors.mapping:main',
             'balldetector  = detectors.balldetector:main',
+            'puckdetector  = detectors.puckdetector:main',
             'facedetector  = detectors.facedetector:main',
             'facedepth     = detectors.facedepth:main',
             'depthincenter = detectors.depthincenter:main',
