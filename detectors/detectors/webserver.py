@@ -40,12 +40,16 @@ class WebNode(Node):
         self.bridge = cv_bridge.CvBridge()
         self.lock = threading.Lock()
         self.sub_im1 = self.create_subscription(
-            Image, 'puckdetector/image_raw', lambda msg: self.cb_image(msg, 0), 1)
+            Image, 'puckdetector/raw_image', lambda msg: self.cb_image(msg, 0), 1)
         self.sub_im2 = self.create_subscription(
-            Image, 'puckdetector/binary_circle', lambda msg: self.cb_image(msg, 1), 1)
+            Image, 'puckdetector/binary_Ten', lambda msg: self.cb_image(msg, 1), 1)
         self.sub_im3 = self.create_subscription(
-            Image, 'puckdetector/binary_rectangle', lambda msg: self.cb_image(msg, 2), 1)
-        self.frames = [None]*3
+            Image, 'puckdetector/binary_Striker', lambda msg: self.cb_image(msg, 2), 1)
+        self.sub_im4 = self.create_subscription(
+            Image, 'puckdetector/binary_Queen', lambda msg: self.cb_image(msg, 3), 1)
+        self.sub_im5 = self.create_subscription(
+            Image, 'puckdetector/binary_Twenty', lambda msg: self.cb_image(msg, 4), 1)
+        self.frames = [None]*5
         # Report.
         self.get_logger().info("Webserver running...")
         
@@ -110,6 +114,20 @@ class WebNode(Node):
         # return the response generated along with the specific media
         # type (mime type)
         return Response(node.generate(2),
+            mimetype = "multipart/x-mixed-replace; boundary=frame")
+        
+    @app.route("/feed4")
+    def feed4():
+        # return the response generated along with the specific media
+        # type (mime type)
+        return Response(node.generate(3),
+            mimetype = "multipart/x-mixed-replace; boundary=frame")
+        
+    @app.route("/feed5")
+    def feed5():
+        # return the response generated along with the specific media
+        # type (mime type)
+        return Response(node.generate(4),
             mimetype = "multipart/x-mixed-replace; boundary=frame")
 
 

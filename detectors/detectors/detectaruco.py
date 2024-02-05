@@ -46,8 +46,12 @@ class DetectorNode(Node):
         # appropriate tags.  DICT_6x6_1000 has 1000 options (way too
         # many).  DICT_6x6_250 has 250 options.  DICT_6x6_50 is
         # probably enough for our projects...
-        self.dict   = cv2.aruco.Dictionary_get(cv2.aruco.DICT_4X4_50)
-        self.params = cv2.aruco.DetectorParameters_create()
+        # self.dict   = cv2.aruco.Dictionary_get(cv2.aruco.DICT_4X4_50)
+        # self.params = cv2.aruco.DetectorParameters_create()
+        
+        self.dict = cv2.aruco.getPredefinedDictionary(cv2.aruco.DICT_4X4_50)
+        self.params =  cv2.aruco.DetectorParameters()
+        self.detector = cv2.aruco.ArucoDetector(self.dict, self.params)
 
         # Finally, subscribe to the incoming image topic.  Using a
         # queue size of one means only the most recent message is
@@ -76,8 +80,8 @@ class DetectorNode(Node):
         frame = self.bridge.imgmsg_to_cv2(msg, "passthrough")
 
         # Detect.
-        (boxes, ids, rejected) = cv2.aruco.detectMarkers(
-            frame, self.dict, parameters=self.params)
+        (boxes, ids, rejected) = self.detector.detectMarkers(
+            frame)
 
         # Loop over each marker: the list of corners and ID for this marker.
         if len(boxes) > 0:

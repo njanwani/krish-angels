@@ -36,6 +36,7 @@ TEN = 'Ten'
 TWENTY = 'Twenty'
 QUEEN = 'Queen'
 STRIKER = 'Striker'
+BOARD = 'Board'
 
 #
 #  Detector Node Class
@@ -55,10 +56,12 @@ class DetectorNode(Node):
 
         # Thresholds in Hmin/max, Smin/max, Vmin/max
         self.HSV_LIMITS = {}
-        self.HSV_LIMITS[TEN] = np.array([[1, 16], [110, 204], [100, 197]])
-        self.HSV_LIMITS[TWENTY] = None
-        self.HSV_LIMITS[QUEEN] = np.array([[100, 112], [132, 177], [43, 87]])
-        self.HSV_LIMITS[STRIKER] = np.array([[83, 115], [34, 105], [0, 42]])
+        self.HSV_LIMITS[TEN] = np.array([[92, 131], [118, 166], [66, 255]])
+        self.HSV_LIMITS[TWENTY] = np.array([[79, 173], [15, 89], [27, 59]])
+        self.HSV_LIMITS[QUEEN] = np.array([[16, 40], [125, 241], [78, 162]])
+        self.HSV_LIMITS[STRIKER] = np.array([[0, 14], [198, 228], [135, 194]])
+
+        self.hsv_board = np.array([[0, 179], [0, 65], [89, 215]])
 
         # publishers
         self.PUB = {}
@@ -73,6 +76,7 @@ class DetectorNode(Node):
         self.IM_PUB[TWENTY] = self.create_publisher(Image, name + '/binary_' + TWENTY, 3)
         self.IM_PUB[QUEEN] = self.create_publisher(Image, name + '/binary_' + QUEEN, 3)
         self.IM_PUB[STRIKER] = self.create_publisher(Image, name + '/binary_' + STRIKER, 3)
+        self.IM_PUB[BOARD] = self.create_publisher(Image, name + '/binary_' + BOARD, 3)
         
         # annotation colors
         self.COLOR = {}
@@ -118,16 +122,43 @@ class DetectorNode(Node):
         markerCorners, markerIds, _ = cv2.aruco.detectMarkers(
             id_frame, cv2.aruco.getPredefinedDictionary(cv2.aruco.DICT_4X4_50))
         
+        frame = id_frame
+        binary_board = cv2.inRange(hsv, self.hsv_board[:,0], self.hsv_board[:,1])
+        (contours_board, hierarchy) = cv2.findContours(
+            binary_board, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
+        
+        self.IM_PUB[BOARD].publish(self.bridge.cv2_to_imgmsg(binary_board, "mono8"))
+
+        # Draw all contours on the original image for debugging.
+        cv2.drawContours(frame, contours_board, -1, self.yellow, 2)
+
+        if len(contours_board) > 0:
+            # Pick the largest contour.
+            contour = max(contours_board, key=cv2.contourArea)
+            x,y,w,h = cv2.boundingRect(contour) 
+            rect = cv2.minAreaRect(contour)
+            box = cv2.boxPoints(rect)
+            box = np.int0(box)
+            # cv2.drawContours(frame,[box],0,(0,191,255),2)
+        
+        
         for puck in self.HSV_LIMITS:
-            if puck == TWENTY: continue
+            # if puck == TWENTY: continue
             frame = id_frame
             binary = cv2.inRange(hsv, self.HSV_LIMITS[puck][:,0], self.HSV_LIMITS[puck][:,1])
-            iters = 1
+            erode_iters = 1
+            dilate_iters = 1
+            if puck == TEN:
+                erode_iters = 0
+                dilate_iters = 1
+
+            if puck == QUEEN:
+                erode_iters = 2
+                dilate_iters = 1
 
             # Erode and Dilate. Definitely adjust the iterations!
-            iter = 0
-            binary = cv2.erode(binary, None, iterations=iter)
-            binary = cv2.dilate(binary, None, iterations=iter)
+            binary = cv2.dilate(binary, None, iterations=dilate_iters)
+            binary = cv2.erode(binary, None, iterations=erode_iters)
 
             # Find contours in the mask and initialize the current
             # (x, y) center of the ball
@@ -146,7 +177,7 @@ class DetectorNode(Node):
                 poses = []
                 for contour in contours:
                     area = cv2.contourArea(contour)
-                    if area < 150:
+                    if area < 50:
                         continue
                     
                     ((ur, vr), radius) = cv2.minEnclosingCircle(contour)
@@ -154,10 +185,13 @@ class DetectorNode(Node):
                     ur     = int(ur)
                     vr     = int(vr)
                     radius = int(radius)
+
+                    if not cv2.pointPolygonTest([contours_board], (ur,vr), True):
+                        continue
                     
-                    # expected_area = radius**2 * np.pi
-                    # if not np.isclose(expected_area / area, 1.0, atol=0.5):
-                    #     continue
+                    expected_area = radius**2 * np.pi
+                    if not np.isclose(expected_area / area, 1.0, atol=0.65):
+                        continue
                     
                     if puck == STRIKER:
                         discard = False
@@ -176,37 +210,37 @@ class DetectorNode(Node):
                     cv2.circle(frame, (cx, cy), 5, self.COLOR[puck], -1)
 
                     xyCenter = self.pixelToWorld(frame, cx, cy, self.x0, self.y0)
-                    if xyCenter is None:
-                        ros_print(self, "Unable to execute mapping for circle")
-                    else:
-                        (xc, yc) = xyCenter
-                        pose = Pose()
-                        pose.position.x = float(xc)
-                        pose.position.y = float(yc)
-                        pose.position.z = 0.02
-                        # poses.append(pose)
+                    # if xyCenter is None:
+                    #     ros_print(self, "Unable to execute mapping for circle")
+                    # else:
+                    #     (xc, yc) = xyCenter
+                    #     pose = Pose()
+                    #     pose.position.x = float(xc)
+                    #     pose.position.y = float(yc)
+                    #     pose.position.z = 0.02
+                    #     # poses.append(pose)
                         
-                        msg = Marker()
-                        msg.id = len(poses)
-                        msg.action = 0
-                        color = ColorRGBA()
-                        color.r, color.g, color.b = list(np.array(self.COLOR[puck]) / 255)
-                        color.a = 0.9
-                        msg.color = color 
-                        msg.header.frame_id = 'world'
-                        msg.type = 3
-                        msg.pose = pose
-                        scale = Vector3()
-                        scale.x = 0.05
-                        scale.y = 0.05
-                        scale.z = 0.05
-                        msg.scale = scale
-                        # msg.lifetime = 0
-                        dur = rclpy.duration.Duration(seconds=0)
-                        msg.lifetime = dur.to_msg()
-                        msg.frame_locked = True
+                    #     msg = Marker()
+                    #     msg.id = len(poses)
+                    #     msg.action = 0
+                    #     color = ColorRGBA()
+                    #     color.r, color.g, color.b = list(np.array(self.COLOR[puck]) / 255)
+                    #     color.a = 0.9
+                    #     msg.color = color 
+                    #     msg.header.frame_id = 'world'
+                    #     msg.type = 3
+                    #     msg.pose = pose
+                    #     scale = Vector3()
+                    #     scale.x = 0.05
+                    #     scale.y = 0.05
+                    #     scale.z = 0.05
+                    #     msg.scale = scale
+                    #     # msg.lifetime = 0
+                    #     dur = rclpy.duration.Duration(seconds=0)
+                    #     msg.lifetime = dur.to_msg()
+                    #     msg.frame_locked = True
                         
-                        poses.append(msg)
+                    #     poses.append(msg)
                         
                 
                 # msg = PoseArray()

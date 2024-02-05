@@ -128,6 +128,6 @@ def generate_launch_description():
         node_robot_state_publisher_ACTUAL,
         node_hebi,
         node_demo,
-        node_rviz,
+        # node_rviz,
         # node_mapping,
     ])
