@@ -57,9 +57,9 @@ class DetectorNode(Node):
         # Thresholds in Hmin/max, Smin/max, Vmin/max
         self.HSV_LIMITS = {}
         self.HSV_LIMITS[TEN] = np.array([[92, 131], [118, 166], [66, 255]])
-        self.HSV_LIMITS[TWENTY] = np.array([[79, 173], [15, 89], [27, 59]])
-        self.HSV_LIMITS[QUEEN] = np.array([[16, 40], [125, 241], [78, 162]])
-        self.HSV_LIMITS[STRIKER] = np.array([[0, 14], [198, 228], [135, 194]])
+        self.HSV_LIMITS[STRIKER] = np.array([[79, 173], [15, 89], [27, 59]])
+        # self.HSV_LIMITS[QUEEN] = np.array([[16, 40], [125, 241], [78, 162]])
+        self.HSV_LIMITS[TWENTY] = np.array([[0, 14], [198, 228], [135, 194]])
 
         self.hsv_board = np.array([[0, 179], [0, 65], [89, 215]])
 
@@ -77,6 +77,15 @@ class DetectorNode(Node):
         self.IM_PUB[QUEEN] = self.create_publisher(Image, name + '/binary_' + QUEEN, 3)
         self.IM_PUB[STRIKER] = self.create_publisher(Image, name + '/binary_' + STRIKER, 3)
         self.IM_PUB[BOARD] = self.create_publisher(Image, name + '/binary_' + BOARD, 3)
+
+        # eroding and dilating
+        self.BINARY_FILTER = {}
+        self.BINARY_FILTER[TEN] = lambda b: cv2.dilate(cv2.erode(b, None, iterations=0), None, iterations=1)
+        self.BINARY_FILTER[TWENTY] = lambda b: cv2.dilate(cv2.erode(b, None, iterations=0), None, iterations=1)
+        self.BINARY_FILTER[QUEEN] = lambda b: cv2.dilate(cv2.erode(b, None, iterations=2), None, iterations=3)
+        self.BINARY_FILTER[STRIKER] = lambda b: cv2.erode(cv2.dilate(b, None, iterations=2), None, iterations=3)
+        self.BINARY_FILTER[BOARD] = lambda b: cv2.dilate(cv2.erode(b, None, iterations=2), None, iterations=1)
+
         
         # annotation colors
         self.COLOR = {}
@@ -124,13 +133,14 @@ class DetectorNode(Node):
         
         frame = id_frame
         binary_board = cv2.inRange(hsv, self.hsv_board[:,0], self.hsv_board[:,1])
+        binary_board = self.BINARY_FILTER[BOARD](binary_board)
         (contours_board, hierarchy) = cv2.findContours(
             binary_board, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
-        
-        self.IM_PUB[BOARD].publish(self.bridge.cv2_to_imgmsg(binary_board, "mono8"))
+        contour_board = max(contours_board, key=cv2.contourArea)
+        # self.IM_PUB[BOARD].publish(self.bridge.cv2_to_imgmsg(binary_board, "mono8"))
 
         # Draw all contours on the original image for debugging.
-        cv2.drawContours(frame, contours_board, -1, self.yellow, 2)
+        cv2.drawContours(frame, [contour_board], -1, self.yellow, 2)
 
         if len(contours_board) > 0:
             # Pick the largest contour.
@@ -146,19 +156,7 @@ class DetectorNode(Node):
             # if puck == TWENTY: continue
             frame = id_frame
             binary = cv2.inRange(hsv, self.HSV_LIMITS[puck][:,0], self.HSV_LIMITS[puck][:,1])
-            erode_iters = 1
-            dilate_iters = 1
-            if puck == TEN:
-                erode_iters = 0
-                dilate_iters = 1
-
-            if puck == QUEEN:
-                erode_iters = 2
-                dilate_iters = 1
-
-            # Erode and Dilate. Definitely adjust the iterations!
-            binary = cv2.dilate(binary, None, iterations=dilate_iters)
-            binary = cv2.erode(binary, None, iterations=erode_iters)
+            binary = self.BINARY_FILTER[puck](binary)
 
             # Find contours in the mask and initialize the current
             # (x, y) center of the ball
@@ -177,7 +175,7 @@ class DetectorNode(Node):
                 poses = []
                 for contour in contours:
                     area = cv2.contourArea(contour)
-                    if area < 50:
+                    if area < 200:
                         continue
                     
                     ((ur, vr), radius) = cv2.minEnclosingCircle(contour)
@@ -186,7 +184,9 @@ class DetectorNode(Node):
                     vr     = int(vr)
                     radius = int(radius)
 
-                    if not cv2.pointPolygonTest([contours_board], (ur,vr), True):
+                    # ros_print(self, f'shape {contours_board}')
+
+                    if cv2.pointPolygonTest(contour_board, (ur,vr), False) != 1.0:
                         continue
                     
                     expected_area = radius**2 * np.pi
