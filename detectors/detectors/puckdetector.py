@@ -11,6 +11,7 @@
 #
 import cv2
 import numpy as np
+from sklearn.cluster import KMeans
 
 # ROS Imports
 import rclpy
@@ -190,8 +191,39 @@ class DetectorNode(Node):
                         continue
                     
                     expected_area = radius**2 * np.pi
-                    if not np.isclose(expected_area / area, 1.0, atol=0.65):
-                        continue
+                    # ros_print(self, f'Area of puck: {area}')
+                    if puck == TEN:
+                        if 0 <= area <= 340.0:
+                            ros_print(self, f'Area {area}, 1 puck')
+                            k=1
+                        elif 340.0 < area <= 650.0:
+                            ros_print(self, f'Area {area}, 2 pucks')
+                            k=2
+                        elif 650 < area <= 800:
+                            ros_print(self, f'Area {area}, 3 pucks')
+                            k=3
+                        else:
+                            ros_print(self, f'Area {area}')
+                            k=4
+                        
+                        if k != 1:
+                            features = np.array(binary.nonzero()).T
+                            kmeans = KMeans(
+                                init="random",
+                                n_clusters=k,
+                                n_init=10,
+                                max_iter=20,
+                                random_state=42
+                            )
+
+                            kmeans.fit(features)
+                            centers = kmeans.cluster_centers_.astype(int)
+                            for center in centers:
+                                cy, cx = center
+                                cv2.circle(frame, (cx, cy), 5, self.COLOR[puck], -1)
+
+                    # if not np.isclose(expected_area / area, 1.0, atol=0.65):
+                    #     continue
                     
                     if puck == STRIKER:
                         discard = False
@@ -206,8 +238,9 @@ class DetectorNode(Node):
                     # Draw the circle (yellow) and centroid (red) on the
                     # original image.
                     cx, cy = x + (w)//2, y + (h)//2
-                    cv2.ellipse(frame, (cx, cy), (w//2, h//2), 0, 0, 360, self.COLOR[puck],  2)
-                    cv2.circle(frame, (cx, cy), 5, self.COLOR[puck], -1)
+                    if not (puck == TEN and k > 1):
+                        cv2.ellipse(frame, (cx, cy), (w//2, h//2), 0, 0, 360, self.COLOR[puck],  2)
+                        cv2.circle(frame, (cx, cy), 5, self.COLOR[puck], -1)
 
                     xyCenter = self.pixelToWorld(frame, cx, cy, self.x0, self.y0)
                     # if xyCenter is None:
