@@ -1,4 +1,4 @@
-<?xml version="1.0" encoding="utf-8"?>
+<?xml version="1.0"?>
 <!-- This URDF was automatically created by SolidWorks to URDF Exporter! Originally created by Stephen Brawner (brawner@gmail.com) 
      Commit Version: 1.6.0-1-g15f4949  Build Version: 1.6.7594.29634
      For more information, please see http://wiki.ros.org/sw_urdf_exporter -->
@@ -89,7 +89,7 @@
     type="revolute">
     <origin
       xyz="0.2607 0.12618 0.11049"
-      rpy="0 0 0" />
+      rpy="0 0 -0.0" />
     <parent
       link="base_link" />
     <child

@@ -48,7 +48,7 @@ class DemoNode(Node):
         # Initialize the node, naming it as specified
         super().__init__(name)
 
-        self.chain = KC(self, 'base_link', 'link10', ['link1', 'link3', 'link5', 'link7', 'link9'])
+        self.chain = KC(self, 'world', 'tip', ['base', 'shoulder', 'elbow'])
         # Create a temporary subscriber to grab the initial position.
         self.position0      = self.grabfbk()
         self.get_logger().info("Initial positions: %r" % self.position0)
@@ -138,7 +138,7 @@ class DemoNode(Node):
         self.cmdmsg.name         = ['link1', 'link3', 'link5', 'link7', 'link9']
 
         nan = float("nan")
-        self.cmdmsg.position = [0.3, 0.35, 0.25, 2.25, 2.8]
+        self.cmdmsg.position = [0.0]*5
         self.cmdmsg.velocity = [0.0]*5
         self.cmdmsg.effort = [0.0]*5
         self.cmdpub.publish(self.cmdmsg)
