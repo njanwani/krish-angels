@@ -190,29 +190,38 @@ class DetectorNode(Node):
                     if cv2.pointPolygonTest(contour_board, (ur,vr), False) != 1.0:
                         continue
                     
+                    k=0
                     expected_area = radius**2 * np.pi
-                    # ros_print(self, f'Area of puck: {area}')
                     if puck == TEN:
-                        if 0 <= area <= 340.0:
-                            ros_print(self, f'Area {area}, 1 puck')
+                        if 0 <= area <= 350.0:
                             k=1
-                        elif 340.0 < area <= 650.0:
-                            ros_print(self, f'Area {area}, 2 pucks')
+                        elif 350.0 < area <= 600.0:
                             k=2
-                        elif 650 < area <= 800:
-                            ros_print(self, f'Area {area}, 3 pucks')
+                        elif 600.0 < area <= 900.0:
                             k=3
                         else:
-                            ros_print(self, f'Area {area}')
                             k=4
+                        ros_print(self, f'Area {area}, {k} pucks')
                         
-                        if k != 1:
+                        if k > 1:
+                            # for point in binary
+                            # check if within circle for cluster and if nonzero
+                            # features = np.array(binary[ur - radius:ur + radius, vr - radius:vr + radius].nonzero()).T
                             features = np.array(binary.nonzero()).T
+                            # ros_print(self, binary)
+                            new_features = []
+                            for pt in features:
+                                # ros_print(self, pt)
+                                if np.linalg.norm(pt - np.array([vr,ur])) < radius:
+                                    new_features.append(pt)
+                            # ros_print(self, (ur, vr))
+                            features = np.array(new_features)
+                            # ros_print(self, features)
                             kmeans = KMeans(
                                 init="random",
                                 n_clusters=k,
                                 n_init=10,
-                                max_iter=20,
+                                max_iter=50,
                                 random_state=42
                             )
 
@@ -220,7 +229,8 @@ class DetectorNode(Node):
                             centers = kmeans.cluster_centers_.astype(int)
                             for center in centers:
                                 cy, cx = center
-                                cv2.circle(frame, (cx, cy), 5, self.COLOR[puck], -1)
+                                cv2.circle(frame, (cx, cy), 8, self.COLOR[puck], 2)
+                                cv2.circle(frame, (cx, cy), 2, self.COLOR[puck], -1)
 
                     # if not np.isclose(expected_area / area, 1.0, atol=0.65):
                     #     continue
@@ -240,7 +250,7 @@ class DetectorNode(Node):
                     cx, cy = x + (w)//2, y + (h)//2
                     if not (puck == TEN and k > 1):
                         cv2.ellipse(frame, (cx, cy), (w//2, h//2), 0, 0, 360, self.COLOR[puck],  2)
-                        cv2.circle(frame, (cx, cy), 5, self.COLOR[puck], -1)
+                        cv2.circle(frame, (cx, cy), 2, self.COLOR[puck], -1)
 
                     xyCenter = self.pixelToWorld(frame, cx, cy, self.x0, self.y0)
                     # if xyCenter is None:

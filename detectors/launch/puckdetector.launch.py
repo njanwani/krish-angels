@@ -27,6 +27,7 @@ def generate_launch_description():
 
     # Locate/load the robot's URDF file (XML).
     urdf = os.path.join(pkgdir('basic134'), 'urdf/threedofexample.urdf')
+    # urdf = os.path.join(pkgdir('basic134'), 'urdf/Robot_assembly_gripper/urdf/Robot_assembly_gripper.urdf')
     with open(urdf, 'r') as file:
         robot_description = file.read()
 
@@ -126,8 +127,8 @@ def generate_launch_description():
         node_balldetector,
         node_webserver,
         node_robot_state_publisher_ACTUAL,
-        node_hebi,
-        node_demo,
+        # node_hebi,
+        # node_demo,
         # node_rviz,
         # node_mapping,
     ])
