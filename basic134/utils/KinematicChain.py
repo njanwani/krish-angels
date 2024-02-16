@@ -6,7 +6,7 @@ from rclpy.node                 import Node
 from rclpy.qos                  import QoSProfile, DurabilityPolicy
 from std_msgs.msg               import String
 from urdf_parser_py.urdf        import Robot
-
+from utils.pyutils import *
 # Grab the utilities
 from utils.TransformHelpers   import *
 
@@ -199,18 +199,26 @@ class KinematicChain():
         return J.T @ np.linalg.pinv(J @ J.T + gamma**2 * np.identity(J.shape[0]))
     
     def ikin(self, dt, qlast, pdlast, vd, wd, Rdlast, q_secondary=np.zeros(3), lam_secondary=1):
+        
         # Compute the old forward kinematics.
         (p, R, Jv, Jw) = self.fkin(qlast)
-        q_secondary = lam_secondary * (np.array([np.pi / 2, -np.pi / 2, np.pi / 2]).reshape((3,1)) - qlast)
+        # ros_print(self.node, f'p: {p}\n\n')
+        # ros_print(self.node, f'R: {R}\n\n')
+        # ros_print(self.node, f'Jv: {Jv}\n\n')
+        # ros_print(self.node, f'Jw: {Jw}\n\n')
+        # ros_print(self.node, f'vd: {vd}\n\n')
+        # ros_print(self.node, f'wd: {wd}\n\n')
+        # ros_print(self.node, f'pdlast: {pdlast}\n\n')
+        # ros_print(self.node, f'Rdlast: {Rdlast}\n\n')
+
         # Compute the inverse kinematics
         vr    = vd + self.lam * ep(pdlast, p)
         wr    = wd + self.lam * eR(Rdlast, R)
         J     = np.vstack((Jv, Jw))
         xrdot = np.vstack((vr, wr))
-        qdot  = np.linalg.pinv(J) @ xrdot #+ (1 - np.linalg.pinv(J) @ J) @ q_secondary.reshape((3,1)) #KinematicChain.weighted_inv(J, 0.5) @ xrdot
-        # raise Exception(f'{pdlast}\n\n\n{p}\n\n\n{vd}\n\n\n{J}\n\n\n{xrdot}\n\n\n{qdot}\n\n\nZamnnnn')
-        # Integrate the joint position.
-        q = qlast + dt * qdot
+        qdot  = np.linalg.pinv(J) @ xrdot
+        q = np.array(qlast).reshape((5,1)) + dt * qdot
+        
         
         return (q.flatten(), qdot.flatten())
 

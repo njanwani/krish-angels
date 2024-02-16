@@ -10,7 +10,9 @@ import time
 # from KinematicChain import KinematicChain as KC
 from utils.KinematicChain import KinematicChain as KC
 from utils.TrajectoryUtils import *
+from utils.TransformHelpers import *
 from enum import Enum
+from utils.pyutils import *
 
 from rclpy.node         import Node
 from sensor_msgs.msg    import JointState
@@ -48,19 +50,29 @@ class DemoNode(Node):
         # Initialize the node, naming it as specified
         super().__init__(name)
 
-        self.chain = KC(self, 'base', 'final2', ['base', 'shoulder', 'elbow', 'wrist', 'final'])
+        self.chain = KC(self, 'world', 'endmotor', ['base', 'shoulder', 'elbow', 'wrist', 'end'])
         # Create a temporary subscriber to grab the initial position.
         self.position0      = self.grabfbk()
+        # self.position0 = np.array([0, -np.pi / 2, np.pi / 2, 0, 0])
+        self.p0, self.R0, _, _ = self.chain.fkin(self.position0)
         self.get_logger().info("Initial positions: %r" % self.position0)
+        self.t = 0
+        self.t0 = self.t
+        self.tmove = 10
+        self.togo = np.ones(3), Reye()
 
         # current robot position IN JOINT SPACE
         self.curr_pos = self.position0
-        self.qdes = np.ones(5)*np.pi / 2
+        self.goal_position = np.array([0.5, 0.0, 0.02]).reshape((3,1))
+        self.R_goal = Roty(0)
+        self.rate = 0.01
 
-        self.B = 1.4
-        self.C = 0.3
+        self.T_filter = 0.5
+        self.t0_filter = time.time()
+        self.filter_effort = 0
         # Subscribe to the actual joint states, waiting for the first message.
         self.actpos = None
+        self.acteffort = None
         self.statessub = self.create_subscription(JointState, '/joint_states', self.cb_states, 1)
         while self.actpos is None:
             rclpy.spin_once(self)
@@ -92,11 +104,20 @@ class DemoNode(Node):
     
     # Save the actual position.
     def cb_states(self, msg):
+        dt = time.time() - self.t0_filter
         self.actpos = msg.position
+        self.acteffort = msg.effort
+        self.filter_effort += dt / self.T_filter * (np.array(msg.effort) - self.filter_effort)
     
     def gravity(self, pos):
         tau_shoulder = float(self.B * np.cos(self.actpos[1]) + max(0, self.C * np.cos(self.actpos[1]) * np.cos(self.actpos[2])))
         return [0.0, tau_shoulder, 0.0]
+    
+    def contact(self):
+        if np.any(self.filter_effort > 1.5):
+            return True
+        
+        return False
 
     # Shutdown
     def shutdown(self):
@@ -131,17 +152,59 @@ class DemoNode(Node):
         # Extract the data.
         self.B = floatmsg.data
 
+    def compute_ts_spline(self):
+        # p_last, _ = spline5(self.t - self.t0,
+        #                     self.tmove,
+        #                     self.chain.fkin(self.q0)[0].flatten(),
+        #                     self.queue[0],
+        #                     0, 0, 0, 0)
+        # _, v = spline5(self.t + 1.0 / RATE - self.t0,
+        #                self.tmove,
+        #                self.chain.fkin(self.q0)[0].flatten(),
+        #                self.queue[0],
+        #                0, 0, 0, 0)
+
+        s = self.h
+        ros_print(self, f'{s}, {self.rate}')
+        sdot = self.hdot
+
+        p = pinter(self.p0, self.goal_position, s)
+        v = vinter(self.p0, self.goal_position, sdot)
+
+        R = Rinter(self.R0, self.R_goal, s)
+        w = winter(self.R0, self.R_goal, sdot)
+        
+        q, qdot = self.chain.ikin(abs(self.rate), self.actpos, p, v, w, R)
+        return q, qdot
+
     # Send a command - called repeatedly by the timer.
     def sendcmd(self):
         # Build up the message and publish.
-        self.t = time.time()
+        if not (self.t - self.t0 <= self.tmove) or (self.t - self.t0 < 0):
+            self.rate *= -1
+
+        self.t += self.rate
+        if not (self.rate <= 0):
+            self.h, self.hdot = spline5(self.t, self.tmove, 0, 1, 0, 0, 0, 0)
+        else:
+            self.h, self.hdot = spline5(self.tmove - self.t, self.tmove, 1, 0, 0, 0, 0, 0)
+
         self.cmdmsg.header.stamp = self.get_clock().now().to_msg()
-        self.cmdmsg.name         = ['base', 'shoulder', 'elbow', 'wrist', 'final']
+        self.cmdmsg.name         = ['base', 'shoulder', 'elbow', 'wrist', 'end']
         T = 2 # seconds
         nan = float("nan")
-        self.cmdmsg.position = np.pi / 2 * np.cos(self.t * T / np.pi) - np.pi / 2
-        self.cmdmsg.velocity = [0.0]*5
-        self.cmdmsg.effort = [0.0]*5
+        q, qdot = self.compute_ts_spline()
+        # if self.contact():
+        #     self.t -= self.rate
+        #     q = [nan] * 5
+        #     qdot = [nan] * 5
+        # q = self.actpos
+        t_elbow = 6 * np.cos(q[1] - q[2])
+        t_shoulder = -t_elbow - 5.2 * np.cos(q[1]) #5.3
+        ros_print(self,f'{self.acteffort[2] - t_elbow}\n\n\n')
+        self.cmdmsg.position = list(q)
+        self.cmdmsg.velocity = list(qdot)
+        self.cmdmsg.effort = [0.0, t_shoulder, t_elbow, 0.0, 0.0]
         self.cmdpub.publish(self.cmdmsg)
 
 

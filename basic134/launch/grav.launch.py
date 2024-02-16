@@ -73,7 +73,7 @@ def generate_launch_description():
         output     = 'screen',
         parameters = [{'family':   'robotlab'},
                       {'motors':   ['4.3',  '4.5',      '4.4']},
-                      {'joints':   ['base', 'shoulder', 'elbow', 'wrist', 'final']},
+                      {'joints':   ['base', 'shoulder', 'elbow', 'wrist', 'end']},
                       {'lifetime': 200.0}],
         on_exit    = Shutdown())
 
@@ -83,9 +83,9 @@ def generate_launch_description():
         executable = 'hebinode',
         output     = 'screen',
         parameters = [{'family':   'robotlab'},
-                      {'motors':   ['4.3',  '4.5',  '4.4','4.6','4.7']},
-                      {'joints':   ['base', 'shoulder', 'elbow', 'wrist', 'final'],},
-                      {'testmode' : 'track'}],
+                      {'motors':   ['4.6',  '4.7',  '4.4', '4.3', '4.2']},
+                      {'joints':   ['base', 'shoulder', 'elbow', 'wrist', 'end']},
+                      {'testmode' : 'off'}],
         on_exit    = Shutdown())
 
     # Configure a node for the simple demo.  PLACEHOLDER FOR YOUR CODE!!

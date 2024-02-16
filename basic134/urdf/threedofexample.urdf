@@ -21,7 +21,6 @@
   <!-- BASE PLATE: Shift across the base plate to the base motor. --> 
   <link name="baseplate">
     <visual>
-      <!-- <origin xyz="0.0585 0.09093 0" rpy="1.5708 0 -1.5708"/> -->
       <origin xyz="0.0585 0.09093 0" rpy="1.5708 0 -1.5708"/>
       <geometry>
         <mesh
@@ -137,7 +136,7 @@
     <parent link="elbowmotor"/>
     <child  link="lowerarm"/>
     <origin xyz="0 -0.0376 0" rpy="0 0 0"/>
-    <axis   xyz="0 1 0"/>
+    <axis   xyz="0 -1 0"/>
   </joint>
 
   <!-- Shift across the upper arm (1/4in thickness) -->
@@ -180,9 +179,7 @@
     <axis   xyz="0 1 0"/>
   </joint>
 
-  <link name="endbracket" type="fixed">
-    <parent link="wrist"/>
-    <child  link="endmotor"/>
+  <link name="endbracket">  
     <visual>
       <origin xyz="-0.04 -0.0659 -0.04" rpy="-1.5708 -1.5708 0"/>
       <geometry>
@@ -197,10 +194,13 @@
     </visual>
   </link>
 
-  <joint name="endmotor" type="fixed">
+  <!-- <joint name="endmotor" type="fixed">
     <parent link="endbracket"/>
     <child  link="final"/>
     <origin xyz="0 0 0" rpy="0 0 0"/>
+  </joint>
+
+  <link name="final">
     <visual>
       <origin xyz="0 0 0" rpy="1.5708 0 0"/>
       <geometry>
@@ -209,24 +209,17 @@
       </geometry>
       <material name="hebi"/>
     </visual>
-  </joint>
+  </link> -->
 
-
-  <link name="final" type="fixed">
-    <parent link="endmotor"/>
-  </link>
-
-  <joint name="final" type="continuous">
-    <parent link="final"/>
-    <child  link="final2"/>
+  <joint name="end" type="continuous">
+    <parent link="endbracket"/>
+    <child  link="endmotor"/>
     <origin xyz="0.0 0.041 -0.03" rpy="0 0 0"/>
     <axis   xyz="0 0 1"/>
   </joint>
 
 
-
-  <link name="final2" type="fixed">
-     <origin xyz="0 0 0" rpy="0 0 0"/>
+  <link name="endmotor">
      <visual>
       <origin xyz="0.088 -0.055 -0.01" rpy="-1.5708 0 1.5708"/>
       <geometry>
