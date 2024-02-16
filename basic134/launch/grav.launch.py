@@ -31,7 +31,7 @@ def generate_launch_description():
     rvizcfg = os.path.join(pkgdir('basic134'), 'rviz/viewurdf.rviz')
 
     # Locate/load the robot's URDF file (XML).
-    urdf = os.path.join(pkgdir('basic134'), 'urdf/Robot_assembly.urdf')
+    urdf = os.path.join(pkgdir('basic134'), 'urdf/threedofexample.urdf')
     with open(urdf, 'r') as file:
         robot_description = file.read()
 
@@ -73,7 +73,7 @@ def generate_launch_description():
         output     = 'screen',
         parameters = [{'family':   'robotlab'},
                       {'motors':   ['4.3',  '4.5',      '4.4']},
-                      {'joints':   ['base', 'shoulder', 'elbow']},
+                      {'joints':   ['base', 'shoulder', 'elbow', 'wrist', 'final']},
                       {'lifetime': 200.0}],
         on_exit    = Shutdown())
 
@@ -84,7 +84,7 @@ def generate_launch_description():
         output     = 'screen',
         parameters = [{'family':   'robotlab'},
                       {'motors':   ['4.3',  '4.5',  '4.4','4.6','4.7']},
-                      {'joints':   ['link1', 'link3', 'link5', 'link7', 'link9'],},
+                      {'joints':   ['base', 'shoulder', 'elbow', 'wrist', 'final'],},
                       {'testmode' : 'track'}],
         on_exit    = Shutdown())
 

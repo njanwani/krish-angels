@@ -48,13 +48,14 @@ class DemoNode(Node):
         # Initialize the node, naming it as specified
         super().__init__(name)
 
-        self.chain = KC(self, 'base_link', 'link10', ['link1', 'link3', 'link5', 'link7', 'link9'])
+        self.chain = KC(self, 'base', 'final2', ['base', 'shoulder', 'elbow', 'wrist', 'final'])
         # Create a temporary subscriber to grab the initial position.
         self.position0      = self.grabfbk()
         self.get_logger().info("Initial positions: %r" % self.position0)
 
         # current robot position IN JOINT SPACE
         self.curr_pos = self.position0
+        self.qdes = np.ones(5)*np.pi / 2
 
         self.B = 1.4
         self.C = 0.3
@@ -135,10 +136,10 @@ class DemoNode(Node):
         # Build up the message and publish.
         self.t = time.time()
         self.cmdmsg.header.stamp = self.get_clock().now().to_msg()
-        self.cmdmsg.name         = ['link1', 'link3', 'link5', 'link7', 'link9']
-
+        self.cmdmsg.name         = ['base', 'shoulder', 'elbow', 'wrist', 'final']
+        T = 2 # seconds
         nan = float("nan")
-        self.cmdmsg.position = [0.3, 0.35, 0.25, 2.25, 2.8]
+        self.cmdmsg.position = np.pi / 2 * np.cos(self.t * T / np.pi) - np.pi / 2
         self.cmdmsg.velocity = [0.0]*5
         self.cmdmsg.effort = [0.0]*5
         self.cmdpub.publish(self.cmdmsg)
