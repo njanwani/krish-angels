@@ -62,5 +62,5 @@ def generate_launch_description():
         # Start the nodes.
         node_usbcam,
         node_mapping,
-        node_detector
+        # node_detector
     ])

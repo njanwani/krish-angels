@@ -57,12 +57,12 @@ class DetectorNode(Node):
 
         # Thresholds in Hmin/max, Smin/max, Vmin/max
         self.HSV_LIMITS = {}
-        self.HSV_LIMITS[TEN] = np.array([[92, 131], [118, 166], [66, 255]])
-        self.HSV_LIMITS[STRIKER] = np.array([[79, 173], [15, 89], [27, 59]])
-        # self.HSV_LIMITS[QUEEN] = np.array([[16, 40], [125, 241], [78, 162]])
-        self.HSV_LIMITS[TWENTY] = np.array([[0, 14], [198, 228], [135, 194]])
+        self.HSV_LIMITS[TEN] = np.array([[53, 106], [66, 120], [55, 102]])
+        # self.HSV_LIMITS[STRIKER] = np.array([[79, 173], [15, 89], [27, 59]])
+        self.HSV_LIMITS[QUEEN] = np.array([[100, 131], [147, 192], [99, 143]])
+        self.HSV_LIMITS[TWENTY] = np.array([[0, 9], [203, 241], [150, 255]])
 
-        self.hsv_board = np.array([[0, 179], [0, 65], [89, 215]])
+        self.hsv_board = np.array([[10, 22], [99, 224], [130, 214]])
 
         # publishers
         self.PUB = {}
@@ -81,7 +81,7 @@ class DetectorNode(Node):
 
         # eroding and dilating
         self.BINARY_FILTER = {}
-        self.BINARY_FILTER[TEN] = lambda b: cv2.dilate(cv2.erode(b, None, iterations=0), None, iterations=1)
+        self.BINARY_FILTER[TEN] = lambda b: cv2.erode(cv2.dilate(b, None, iterations=1), None, iterations=1)
         self.BINARY_FILTER[TWENTY] = lambda b: cv2.dilate(cv2.erode(b, None, iterations=0), None, iterations=1)
         self.BINARY_FILTER[QUEEN] = lambda b: cv2.dilate(cv2.erode(b, None, iterations=2), None, iterations=3)
         self.BINARY_FILTER[STRIKER] = lambda b: cv2.erode(cv2.dilate(b, None, iterations=2), None, iterations=3)
@@ -107,6 +107,8 @@ class DetectorNode(Node):
         # stored for the next subscriber callback.
         self.sub = self.create_subscription(
             Image, '/image_raw', self.process, 1)
+        
+        ros_print(self, 'here!')
 
 
     # Shutdown
@@ -137,11 +139,11 @@ class DetectorNode(Node):
         binary_board = self.BINARY_FILTER[BOARD](binary_board)
         (contours_board, hierarchy) = cv2.findContours(
             binary_board, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
-        contour_board = max(contours_board, key=cv2.contourArea)
+        # contour_board = max(contours_board, key=cv2.contourArea)
         # self.IM_PUB[BOARD].publish(self.bridge.cv2_to_imgmsg(binary_board, "mono8"))
 
         # Draw all contours on the original image for debugging.
-        cv2.drawContours(frame, [contour_board], -1, self.yellow, 2)
+        # cv2.drawContours(frame, [contour_board], -1, self.yellow, 2)
 
         if len(contours_board) > 0:
             # Pick the largest contour.
@@ -176,7 +178,7 @@ class DetectorNode(Node):
                 poses = []
                 for contour in contours:
                     area = cv2.contourArea(contour)
-                    if area < 200:
+                    if area < 75:
                         continue
                     
                     ((ur, vr), radius) = cv2.minEnclosingCircle(contour)
@@ -187,8 +189,8 @@ class DetectorNode(Node):
 
                     # ros_print(self, f'shape {contours_board}')
 
-                    if cv2.pointPolygonTest(contour_board, (ur,vr), False) != 1.0:
-                        continue
+                    # if cv2.pointPolygonTest(contour_board, (ur,vr), False) != 1.0:
+                    #     continue
                     
                     k=0
                     expected_area = radius**2 * np.pi
@@ -201,7 +203,7 @@ class DetectorNode(Node):
                             k=3
                         else:
                             k=4
-                        ros_print(self, f'Area {area}, {k} pucks')
+                        # ros_print(self, f'Area {area}, {k} pucks')
                         
                         if k > 1:
                             # for point in binary
@@ -252,38 +254,12 @@ class DetectorNode(Node):
                         cv2.ellipse(frame, (cx, cy), (w//2, h//2), 0, 0, 360, self.COLOR[puck],  2)
                         cv2.circle(frame, (cx, cy), 2, self.COLOR[puck], -1)
 
-                    xyCenter = self.pixelToWorld(frame, cx, cy, self.x0, self.y0)
-                    # if xyCenter is None:
-                    #     ros_print(self, "Unable to execute mapping for circle")
-                    # else:
-                    #     (xc, yc) = xyCenter
-                    #     pose = Pose()
-                    #     pose.position.x = float(xc)
-                    #     pose.position.y = float(yc)
-                    #     pose.position.z = 0.02
-                    #     # poses.append(pose)
-                        
-                    #     msg = Marker()
-                    #     msg.id = len(poses)
-                    #     msg.action = 0
-                    #     color = ColorRGBA()
-                    #     color.r, color.g, color.b = list(np.array(self.COLOR[puck]) / 255)
-                    #     color.a = 0.9
-                    #     msg.color = color 
-                    #     msg.header.frame_id = 'world'
-                    #     msg.type = 3
-                    #     msg.pose = pose
-                    #     scale = Vector3()
-                    #     scale.x = 0.05
-                    #     scale.y = 0.05
-                    #     scale.z = 0.05
-                    #     msg.scale = scale
-                    #     # msg.lifetime = 0
-                    #     dur = rclpy.duration.Duration(seconds=0)
-                    #     msg.lifetime = dur.to_msg()
-                    #     msg.frame_locked = True
-                        
-                    #     poses.append(msg)
+                    success, xyCenter = self.pixelToWorld(frame, cx, cy, self.x0, self.y0)
+                    if not success:
+                        ros_print(self, 'globalization failed')
+                        continue
+                    (xc, yc) = xyCenter
+                    ros_print(self, f'{xc}, {yc}')
                         
                 
                 # msg = PoseArray()
@@ -307,7 +283,7 @@ class DetectorNode(Node):
 
 
 # Pixel Conversion
-    def pixelToWorld(self, image, u, v, x0, y0, annotateImage=False):
+    def pixelToWorld(self, image, u, v, x0, y0, annotateImage=True):
         '''
         Convert the (u,v) pixel position into (x,y) world coordinates
         Inputs:
@@ -332,22 +308,36 @@ class DetectorNode(Node):
 
         # Abort if not all markers are detected.
         if (markerIds is None or len(markerIds) != 4 or
-            set(markerIds.flatten()) != set([1,2,3,4])):
-            return None
+            set(markerIds.flatten()) != set([0,1,2,3])):
+            return False, None
 
-
+        # ros_print(self, markerIds)
         # Determine the center of the marker pixel coordinates.
         uvMarkers = np.zeros((4,2), dtype='float32')
         for i in range(4):
             uvMarkers[markerIds[i]-1,:] = np.mean(markerCorners[i], axis=1)
 
+        if annotateImage:
+            for cx, cy in uvMarkers:
+                cv2.circle(image, (int(cx),int(cy)), 3, (255,0,0), -1)
+
         # Calculate the matching World coordinates of the 4 Aruco markers.
-        DX = 0.1016
-        DY = 0.06985
-        xyMarkers = np.float32([[x0+dx, y0+dy] for (dx, dy) in
-                                [(-DX, DY), (DX, DY), (-DX, -DY), (DX, -DY)]])
+        H = 0.1375
+        W = 0.1375
+        DX = 0.555
+        DY = 0.305
+        xyMarkers = np.float32([[H / 2, 0.453 + W / 2],
+                     [H / 2, -0.16 - W / 2],
+                     [1.156 + H/2, -0.148 - W / 2],
+                     [1.144 + H/2, 0.324 + W/2]])
+        # xyMarkers = np.float32([[x0+dx, y0+dy] for (dx, dy) in
+        #                         [(-DX, DY), (-DX, -DY), (DX, -DY), (DX, DY)]])
 
 
+        xyMarkers = [xyMarkers[i] for i in [0,3,1,2]]
+        xyMarkers = np.float32(xyMarkers)
+
+        # print(uvMarkers.shape)
         # Create the perspective transform.
         M = cv2.getPerspectiveTransform(uvMarkers, xyMarkers)
 
@@ -363,7 +353,7 @@ class DetectorNode(Node):
             cv2.putText(image, s, (u-80, v-8), cv2.FONT_HERSHEY_SIMPLEX,
                         0.5, (255, 0, 0), 2, cv2.LINE_AA)
 
-        return xyObj
+        return True, xyObj
 
 #
 #   Main Code

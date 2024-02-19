@@ -13,15 +13,16 @@
   <link name="world"/>
 
   <joint name="placement" type="fixed">
+    <origin xyz="0.03387 0.08992 0" rpy="0 0 0"/>			
+    <!-- <origin xyz="0 0 0" rpy="0 0 0"/>	 -->
     <parent link="world"/>
     <child  link="baseplate"/>
-    <origin xyz="0 0 0" rpy="0 0 0"/>			
   </joint>
 
   <!-- BASE PLATE: Shift across the base plate to the base motor. --> 
   <link name="baseplate">
     <visual>
-      <origin xyz="0.0585 0.09093 0" rpy="1.5708 0 -1.5708"/>
+      <origin xyz="0.08 0.0875 0" rpy="1.5708 0 -1.5708"/>
       <geometry>
         <mesh
           filename="package://basic134/meshes/base.STL" 
@@ -34,7 +35,7 @@
   <joint name="baseplate" type="fixed">
     <parent link="baseplate"/>
     <child  link="basemotor"/>
-    <origin xyz="-0.0215 0 0.0125" rpy="0 0 0"/>
+    <origin xyz="-0.0025 -0.002 0.0125" rpy="0 0 0"/>
   </joint>
 
   <!-- BASE MOTOR: Thickness: X5 = 31.1mm, X8 = 45.1mm -->
@@ -117,7 +118,7 @@
   <joint name="upperarm" type="fixed">
     <parent link="upperarm"/>
     <child  link="elbowmotor"/>
-    <origin xyz="0.445 -0.00635 0.004" rpy="0 0 0"/>		  <!-- UPPER ARM DIMENIONS -->
+    <origin xyz="0.445 -0.00635 0.003" rpy="0 0 0"/>		  <!-- UPPER ARM DIMENIONS -->
   </joint>
 
   <!-- Elbow motor.  Thickness: X5 = 31.1mm, X8 = 45.1mm -->
@@ -158,7 +159,7 @@
   <joint name="lowerarm" type="fixed">
     <parent link="lowerarm"/>
     <child  link="wristmotor"/>
-    <origin xyz="0.647 0.0065 0.0035" rpy="0 0 0"/>		  <!-- LOWER ARM DIMENIONS -->
+    <origin xyz="0.647 0.0065 0.001" rpy="0 0 0"/>		  <!-- LOWER ARM DIMENIONS -->
   </joint>
 
   <link name="wristmotor">

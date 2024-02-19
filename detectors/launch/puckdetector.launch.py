@@ -96,7 +96,7 @@ def generate_launch_description():
         parameters = [{'family':   'robotlab'},
                       {'motors':   ['4.3',  '4.5',      '4.4']},
                       {'joints':   ['base', 'shoulder', 'elbow'],},
-                      {'testmode' : 'off'}],
+                      {'testmode' : 'track'}],
         on_exit    = Shutdown())
 
     # Configure a node for the simple demo.  PLACEHOLDER FOR YOUR CODE!!

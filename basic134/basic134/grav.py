@@ -25,10 +25,10 @@ from std_msgs.msg import Float32
 #
 RATE = 100.0            # Hertz
 
-class Mode(Enum):
-    JOINT_SPLINE      = 0
-    TASK_SPLINE       = 1
-    HOLD              = 2
+
+GRAV_SPLINE = 0
+TASK_SPLINE = 1
+CHILL = 2
 
 #
 #   DEMO Node Class
@@ -58,12 +58,12 @@ class DemoNode(Node):
         self.get_logger().info("Initial positions: %r" % self.position0)
         self.t = 0
         self.t0 = self.t
-        self.tmove = 10
-        self.togo = np.ones(3), Reye()
+        self.tmove = 1
+        self.mode = 'GRAV'
 
         # current robot position IN JOINT SPACE
         self.curr_pos = self.position0
-        self.goal_position = np.array([0.5, 0.0, 0.02]).reshape((3,1))
+        self.goal_position = np.array([0.3, 0.3, 0.05]).reshape((3,1))
         self.R_goal = Roty(0)
         self.rate = 0.01
 
@@ -105,6 +105,7 @@ class DemoNode(Node):
     # Save the actual position.
     def cb_states(self, msg):
         dt = time.time() - self.t0_filter
+        self.t0_filter = time.time()
         self.actpos = msg.position
         self.acteffort = msg.effort
         self.filter_effort += dt / self.T_filter * (np.array(msg.effort) - self.filter_effort)
@@ -152,7 +153,7 @@ class DemoNode(Node):
         # Extract the data.
         self.B = floatmsg.data
 
-    def compute_ts_spline(self):
+    def compute_ts_spline(self, s, sdot):
         # p_last, _ = spline5(self.t - self.t0,
         #                     self.tmove,
         #                     self.chain.fkin(self.q0)[0].flatten(),
@@ -164,9 +165,7 @@ class DemoNode(Node):
         #                self.queue[0],
         #                0, 0, 0, 0)
 
-        s = self.h
-        ros_print(self, f'{s}, {self.rate}')
-        sdot = self.hdot
+
 
         p = pinter(self.p0, self.goal_position, s)
         v = vinter(self.p0, self.goal_position, sdot)
@@ -179,32 +178,55 @@ class DemoNode(Node):
 
     # Send a command - called repeatedly by the timer.
     def sendcmd(self):
-        # Build up the message and publish.
-        if not (self.t - self.t0 <= self.tmove) or (self.t - self.t0 < 0):
-            self.rate *= -1
 
         self.t += self.rate
-        if not (self.rate <= 0):
-            self.h, self.hdot = spline5(self.t, self.tmove, 0, 1, 0, 0, 0, 0)
-        else:
-            self.h, self.hdot = spline5(self.tmove - self.t, self.tmove, 1, 0, 0, 0, 0, 0)
+        ros_print(self,f'{self.t - self.t0} {self.mode}\n\n\n')
+        # if not (self.rate <= 0):
+        #     self.h, self.hdot = spline5(self.t, self.tmove, 0, 1, 0, 0, 0, 0)
+        # else:
+        #     self.h, self.hdot = spline5(self.tmove - self.t, self.tmove, 1, 0, 0, 0, 0, 0)
 
         self.cmdmsg.header.stamp = self.get_clock().now().to_msg()
         self.cmdmsg.name         = ['base', 'shoulder', 'elbow', 'wrist', 'end']
         T = 2 # seconds
         nan = float("nan")
-        q, qdot = self.compute_ts_spline()
-        # if self.contact():
-        #     self.t -= self.rate
-        #     q = [nan] * 5
-        #     qdot = [nan] * 5
-        # q = self.actpos
-        t_elbow = 6 * np.cos(q[1] - q[2])
-        t_shoulder = -t_elbow - 5.2 * np.cos(q[1]) #5.3
-        ros_print(self,f'{self.acteffort[2] - t_elbow}\n\n\n')
+        
+        if self.mode == 'GRAV':
+            t_elbow = 6 * np.cos(self.actpos[1] - self.actpos[2])
+            t_shoulder = -t_elbow - 5.2 * np.cos(self.actpos[1]) #5.3
+            q = [nan] * 5
+            qdot = [nan] * 5
+            effort = spline5(self.t - self.t0, self.tmove, 0, 1, 0, 0, 0, 0)[0] * np.array([0.0, t_shoulder, t_elbow, 0.0, 0.0])
+        elif self.mode == 'TASK':
+            s, sdot = spline5(self.t - self.t0, self.tmove, 0, 1, 0, 0, 0, 0)
+            q, qdot = self.compute_ts_spline(s, sdot)
+            t_elbow = 6 * np.cos(q[1] - q[2])
+            t_shoulder = -t_elbow - 5.2 * np.cos(q[1]) #5.3
+            effort = np.array([0.0, t_shoulder, t_elbow, 0.0, 0.0])
+        elif self.mode == 'CHILL':
+            q = [nan] * 5
+            qdot = [nan] * 5
+            t_elbow = 6 * np.cos(self.actpos[1] - self.actpos[2])
+            t_shoulder = -t_elbow - 5.2 * np.cos(self.actpos[1]) #5.3
+            effort = np.array([0.0, t_shoulder, t_elbow, 0.0, 0.0])
+        else:
+            raise Exception('OOPS')
+        
+        self.qlast = q
+
+        if self.mode == 'GRAV' and self.t - self.t0 > self.tmove:
+            ros_print(self, 'SWITCHSWITCH\n\n\n\n\n\n\n')
+            self.mode = 'CHILL'
+            self.tmove = 6
+            self.t0 = self.t
+        elif self.mode == 'TASK' and self.t - self.t0 > self.tmove:
+            self.mode = 'CHILL'
+
+
+        
         self.cmdmsg.position = list(q)
         self.cmdmsg.velocity = list(qdot)
-        self.cmdmsg.effort = [0.0, t_shoulder, t_elbow, 0.0, 0.0]
+        self.cmdmsg.effort = list(effort)
         self.cmdpub.publish(self.cmdmsg)
 
 

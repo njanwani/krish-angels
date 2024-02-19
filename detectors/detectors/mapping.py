@@ -53,8 +53,8 @@ class DemoNode(Node):
         
         self.sub = self.create_subscription(
             Image, '/image_raw', self.process, 1)
-        self.x0 = 0.321
-        self.y0 = 0.0
+        self.x0 = 0.5       # 0.62
+        self.y0 = 0.0       # 0.1
             
         self.pubrec = self.create_publisher(Pose, name+'/rectangle',    3)
         self.pubcirc = self.create_publisher(Point, name+'/circle',    3)
@@ -69,6 +69,7 @@ class DemoNode(Node):
         self.circle_sub = self.create_subscription(
             Point, '/balldetector/circle', self.cb_circle, 1)
 
+        
         # Report.
         # self.get_logger().info("Mapper running...")
 
@@ -95,7 +96,7 @@ class DemoNode(Node):
 
         Return None for the point if not all the Aruco markers are detected
         '''
-
+        
         # Detect the Aruco markers (using the 4X4 dictionary).
         markerCorners, markerIds, _ = cv2.aruco.detectMarkers(
             image, cv2.aruco.getPredefinedDictionary(cv2.aruco.DICT_4X4_50))
@@ -104,7 +105,7 @@ class DemoNode(Node):
 
         # Abort if not all markers are detected.
         if (markerIds is None or len(markerIds) != 4 or
-            set(markerIds.flatten()) != set([1,2,3,4])):
+            set(markerIds.flatten()) != set([1,2,3,0])):
             return None
 
 
@@ -114,11 +115,17 @@ class DemoNode(Node):
             uvMarkers[markerIds[i]-1,:] = np.mean(markerCorners[i], axis=1)
 
         # Calculate the matching World coordinates of the 4 Aruco markers.
-        DX = 0.1016
-        DY = 0.06985
-        xyMarkers = np.float32([[x0+dx, y0+dy] for (dx, dy) in
-                                [(-DX, DY), (DX, DY), (-DX, -DY), (DX, -DY)]])
-
+        # DX = 0.1016
+        # DY = 0.06985
+        # xyMarkers = np.float32([[x0+dx, y0+dy] for (dx, dy) in
+        #                         [(-DX, DY), (DX, DY), (-DX, -DY), (DX, -DY)]])
+        
+        H = 0.1375
+        W = H
+        xyMarkers = np.float32([[H/2, 0.324 + W / 2],
+                                [H/2, -0.159 - W/2], 
+                                [1.109 + H/2, -0.13 - W/2 - 0.0275],
+                                [1.105 + H/2, 0.312 + W/2]])
 
         # Create the perspective transform.
         M = cv2.getPerspectiveTransform(uvMarkers, xyMarkers)
@@ -127,7 +134,6 @@ class DemoNode(Node):
         uvObj = np.float32([u, v])
         xyObj = cv2.perspectiveTransform(uvObj.reshape(1,1,2), M).reshape(2)
 
-
         # Mark the detected coordinates.
         if annotateImage:
             # cv2.circle(image, (u, v), 5, (0, 0, 0), -1)
@@ -135,11 +141,12 @@ class DemoNode(Node):
             cv2.putText(image, s, (u-80, v-8), cv2.FONT_HERSHEY_SIMPLEX,
                         0.5, (255, 0, 0), 2, cv2.LINE_AA)
 
-        return xyObj
+        return xyObj[::1]
 
 
     # Process the image (detect the ball).
     def process(self, msg):
+        
         # Confirm the encoding and report.
         assert(msg.encoding == "rgb8")
         # self.get_logger().info(
@@ -155,19 +162,20 @@ class DemoNode(Node):
         vc = H//2
 
         # Assume the center of marker sheet is at the world origin.
-        x0 = 0.321
-        y0 = 0.0
+        # x0 = 0.321
+        # y0 = 0.0
 
         # Convert the center of the image into world coordinates.
-        xyCenter = self.pixelToWorld(image, self.uc, self.vc, x0, y0)
+        xyCenter = self.pixelToWorld(image, uc, vc, self.x0, self.y0)
 
-        
+        # ros_print(self, 'AFKLJAHKJFSHKAJHFA')
         # Mark the center of the image.
-        cv2.circle(image, (self.uc, self.vc), 5, self.red, -1)
+        cv2.circle(image, (uc, vc), 5, self.red, -1)
 
         # Report the mapping.
         if xyCenter is None:
-            self.get_logger().info("Unable to execute mapping")
+            # self.get_logger().info("Unable to execute mapping")
+            return
         else:
             (xc, yc) = xyCenter
             self.get_logger().info("Camera pointed at (%f,%f)" % (xc, yc))
