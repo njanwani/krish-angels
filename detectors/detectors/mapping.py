@@ -112,20 +112,23 @@ class DemoNode(Node):
         # Determine the center of the marker pixel coordinates.
         uvMarkers = np.zeros((4,2), dtype='float32')
         for i in range(4):
-            uvMarkers[markerIds[i]-1,:] = np.mean(markerCorners[i], axis=1)
+            uvMarkers[markerIds[i],:] = np.mean(markerCorners[i], axis=1)
 
         # Calculate the matching World coordinates of the 4 Aruco markers.
         # DX = 0.1016
         # DY = 0.06985
         # xyMarkers = np.float32([[x0+dx, y0+dy] for (dx, dy) in
         #                         [(-DX, DY), (DX, DY), (-DX, -DY), (DX, -DY)]])
+            
+        for cx, cy in uvMarkers:
+            cv2.circle(image, (int(cx), int(cy)), 5, self.red, -1)
         
-        H = 0.1375
+        H = 0.1
         W = H
-        xyMarkers = np.float32([[H/2, 0.324 + W / 2],
-                                [H/2, -0.159 - W/2], 
-                                [1.109 + H/2, -0.13 - W/2 - 0.0275],
-                                [1.105 + H/2, 0.312 + W/2]])
+        xyMarkers = np.float32([[0.019 + H/2, 0.3338 + W / 2],
+                                [1.12 + H/2, 0.343 + W/2],
+                                [0.018 + H/2, -0.175 - W/2], 
+                                [1.13 + H/2, -0.158  - W/2 - 0.0275]])
 
         # Create the perspective transform.
         M = cv2.getPerspectiveTransform(uvMarkers, xyMarkers)
@@ -158,8 +161,8 @@ class DemoNode(Node):
 
         # Grab the image shape, determine the center pixel.
         (H, W, D) = image.shape
-        uc = W//2
-        vc = H//2
+        uc = W//2 - 100
+        vc = H//2 
 
         # Assume the center of marker sheet is at the world origin.
         # x0 = 0.321
@@ -175,7 +178,7 @@ class DemoNode(Node):
         # Report the mapping.
         if xyCenter is None:
             # self.get_logger().info("Unable to execute mapping")
-            return
+            pass
         else:
             (xc, yc) = xyCenter
             self.get_logger().info("Camera pointed at (%f,%f)" % (xc, yc))

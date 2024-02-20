@@ -76,13 +76,13 @@ UsbCamNode::UsbCamNode(const rclcpp::NodeOptions & node_options)
   this->declare_parameter("contrast", -1);    // 0-255, -1 "leave alone"
   this->declare_parameter("saturation", -1);  // 0-255, -1 "leave alone"
   this->declare_parameter("sharpness", -1);   // 0-255, -1 "leave alone"
-  this->declare_parameter("gain", -1);        // 0-100?, -1 "leave alone"
-  this->declare_parameter("auto_white_balance", true);
-  this->declare_parameter("white_balance", 4000);
-  this->declare_parameter("autoexposure", true);
+  this->declare_parameter("gain", 20);        // 0-100?, -1 "leave alone"
+  this->declare_parameter("auto_white_balance", false);
+  this->declare_parameter("white_balance", 3500);
+  this->declare_parameter("autoexposure", false);
   this->declare_parameter("exposure", 250);
-  this->declare_parameter("autofocus", true);
-  this->declare_parameter("focus", -1);  // 0-255, -1 "leave alone"
+  this->declare_parameter("autofocus", false);
+  this->declare_parameter("focus", 0);  // 0-255, -1 "leave alone"
 
   get_params();
   init();
