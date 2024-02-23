@@ -143,9 +143,9 @@
   <!-- Shift across the upper arm (1/4in thickness) -->
   <link name="lowerarm">
     <visual>
-    <origin xyz="0.678 0.007 0.0367" rpy="3.1459 0 -1.5708"/>
+    <origin xyz="0.478 0.007 0.0367" rpy="3.1459 0 -1.5708"/>
       <geometry>
-        <mesh filename="package://basic134/meshes/second_link.STL"
+        <mesh filename="package://basic134/meshes/first_link.STL"
 	      scale="0.001 0.001 0.001"/>
       </geometry>
       <material
@@ -159,7 +159,7 @@
   <joint name="lowerarm" type="fixed">
     <parent link="lowerarm"/>
     <child  link="wristmotor"/>
-    <origin xyz="0.647 0.0065 0.001" rpy="0 0 0"/>		  <!-- LOWER ARM DIMENIONS -->
+    <origin xyz="0.446 0.0075 0.001" rpy="0 0 0"/>		  <!-- LOWER ARM DIMENIONS -->
   </joint>
 
   <link name="wristmotor">

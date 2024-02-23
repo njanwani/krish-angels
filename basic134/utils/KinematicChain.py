@@ -198,7 +198,7 @@ class KinematicChain():
     def weighted_inv(J, gamma):
         return J.T @ np.linalg.pinv(J @ J.T + gamma**2 * np.identity(J.shape[0]))
     
-    def ikin(self, dt, qlast, pdlast, vd, wd, Rdlast, q_secondary=np.zeros(3), lam_secondary=1):
+    def ikin(self, dt, qlast, pdlast, vd, wd, Rdlast, q_secondary=np.zeros(3), lam_secondary=1, gamma=100):
         
         # Compute the old forward kinematics.
         (p, R, Jv, Jw) = self.fkin(qlast)
@@ -216,7 +216,13 @@ class KinematicChain():
         wr    = wd + self.lam * eR(Rdlast, R)
         J     = np.vstack((Jv, Jw))
         xrdot = np.vstack((vr, wr))
-        qdot  = np.linalg.pinv(J) @ xrdot
+        Jw_    = KinematicChain.weighted_inv(J, 0.1) 
+        # ros_print(self.node, Jw.shape)
+        _, S, _ = np.linalg.svd(np.linalg.pinv(J))
+        gamma = 0.1 * np.log(1 / np.min(np.abs(S)))
+        ros_print(self.node, gamma)
+        # qdot  = Jw_ @ xrdot
+        qdot = KinematicChain.weighted_inv(J, gamma) @ xrdot
         q = np.array(qlast).reshape((5,1)) + dt * qdot
         
         

@@ -1,7 +1,7 @@
 from setuptools import find_packages, setup
 from glob import glob
 
-package_name = 'basic134'
+package_name = 'brain'
 
 setup(
     name=package_name,
@@ -12,24 +12,17 @@ setup(
             ['resource/' + package_name]),
         ('share/' + package_name, ['package.xml']),
         ('share/' + package_name + '/launch', glob('launch/*')),
-        ('share/' + package_name + '/rviz',   glob('rviz/*')),
-        ('share/' + package_name + '/meshes', glob('meshes/*')),
-        ('share/' + package_name + '/urdf',   glob('urdf/*')),
     ],
     install_requires=['setuptools'],
     zip_safe=True,
     maintainer='robot',
-    maintainer_email='robot@todo.todo',
-    description='Basic items for 134',
+    maintainer_email='pmutiakpochanajmillannjanwani@caltech.edu',
+    description='TODO: Package description',
     license='TODO: License declaration',
     tests_require=['pytest'],
     entry_points={
         'console_scripts': [
-            'demo134      = basic134.demo134:main',
-            'grav      = basic134.grav:main',
-            'receivepoint = basic134.receivepoint:main',
-            'low_level = basic134.low_level:main',
-            'end_effector = basic134.end_effector:main'
+            'touch = brain.touch:main',
         ],
     },
 )

@@ -18,24 +18,24 @@ cTime = 0
 
 while True:
     success, img = cap.read()
-    imgRGB = cv2.cvtColor(img, cv2.COLOR_BGR2RGB)
-    cTime = time.time()
-    results = hands.process(imgRGB)
-    fps = (time.time()-cTime) * 1000
-    #print(results.multi_hand_landmarks)
+    # imgRGB = cv2.cvtColor(img, cv2.COLOR_BGR2RGB)
+    # cTime = time.time()
+    # results = hands.process(imgRGB)
+    # fps = (time.time()-cTime) * 1000
+    # #print(results.multi_hand_landmarks)
 
-    if results.multi_hand_landmarks:
-        for handLms in results.multi_hand_landmarks:
-            for id, lm in enumerate(handLms.landmark):
-                h, w, c = img.shape
-                cx, cy = int(lm.x * w), int(lm.y * h)
-                cv2.circle(img, (cx,cy), 3, (255,0,255), cv2.FILLED)
+    # if results.multi_hand_landmarks:
+    #     for handLms in results.multi_hand_landmarks:
+    #         for id, lm in enumerate(handLms.landmark):
+    #             h, w, c = img.shape
+    #             cx, cy = int(lm.x * w), int(lm.y * h)
+    #             cv2.circle(img, (cx,cy), 3, (255,0,255), cv2.FILLED)
 
-            mpDraw.draw_landmarks(img, handLms, mpHands.HAND_CONNECTIONS)
+    #         mpDraw.draw_landmarks(img, handLms, mpHands.HAND_CONNECTIONS)
 
     
 
-    cv2.putText(img,str(int(fps)), (10,70), cv2.FONT_HERSHEY_PLAIN, 3, (255,0,255), 3)
-
+    # cv2.putText(img,str(int(fps)), (10,70), cv2.FONT_HERSHEY_PLAIN, 3, (255,0,255), 3)
+    print(img)
     cv2.imshow("Image", img)
     cv2.waitKey(1)

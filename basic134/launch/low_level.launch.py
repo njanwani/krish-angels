@@ -64,35 +64,22 @@ def generate_launch_description():
         arguments  = ['-d', rvizcfg],
         on_exit    = Shutdown())
 
-    # Configure a node for the hebi interface.  Note the 200ms timeout
-    # is useful as the GUI only runs at 10Hz.
-    node_hebi_SLOW = Node(
-        name       = 'hebi', 
-        package    = 'hebiros',
-        executable = 'hebinode',
-        output     = 'screen',
-        parameters = [{'family':   'robotlab'},
-                      {'motors':   ['4.3',  '4.5',      '4.4']},
-                      {'joints':   ['base', 'shoulder', 'elbow']},
-                      {'lifetime': 200.0}],
-        on_exit    = Shutdown())
-
     node_hebi = Node(
         name       = 'hebi', 
         package    = 'hebiros',
         executable = 'hebinode',
         output     = 'screen',
         parameters = [{'family':   'robotlab'},
-                      {'motors':   ['4.3',  '4.5',      '4.4']},
-                      {'joints':   ['link1', 'link3', 'link5', 'link7', 'link9'],},
+                      {'motors':   ['4.6',  '4.7',  '4.4', '4.3', '4.2']},
+                      {'joints':   ['base', 'shoulder', 'elbow', 'wrist', 'end']},
                       {'testmode' : 'track'}],
         on_exit    = Shutdown())
 
     # Configure a node for the simple demo.  PLACEHOLDER FOR YOUR CODE!!
     node_demo = Node(
-        name       = 'end_effector', 
+        name       = 'demo', 
         package    = 'basic134',
-        executable = 'end_effector',
+        executable = 'low_level',
         output     = 'screen')
 
     # Configure a node for the GUI to command the robot.
@@ -103,41 +90,6 @@ def generate_launch_description():
         output     = 'screen',
         remappings = [('/joint_states', '/joint_commands')],
         on_exit    = Shutdown())
-    
-    # Configure the USB camera node
-    node_usbcam = Node(
-        name       = 'usb_cam', 
-        package    = 'usb_cam',
-        executable = 'usb_cam_node_exe',
-        namespace  = 'usb_cam',
-        output     = 'screen',
-        parameters = [{'camera_name':  'logitech'},
-                      {'video_device': '/dev/video0'},
-                      {'pixel_format': 'yuyv2rgb'},
-                      {'image_width':  640},
-                      {'image_height': 480},
-                      {'framerate':    15.0}])
-    # Configure the mapping demostration node
-    node_mapping = Node(
-        name       = 'mapper', 
-        package    = 'detectors',
-        executable = 'mapping',
-        output     = 'screen',
-        remappings = [('/image_raw', '/usb_cam/image_raw')])
-    
-    node_detector = Node(
-        name       = 'detector', 
-        package    = 'detectors',
-        executable = 'balldetector',
-        output     = 'screen',
-        remappings = [('/image_raw', '/usb_cam/image_raw')])
-    
-    node_webserver = Node(
-        name       = 'webserver', 
-        package    = 'detectors',
-        executable = 'webserver',
-        output     = 'screen',
-        remappings = [('/image_raw', '/usb_cam/image_raw')])
 
 
     ######################################################################
@@ -157,14 +109,10 @@ def generate_launch_description():
         # node_hebi,
 
         # # STEP 3: Start if we want the demo code to command the robot.
-        # node_robot_state_publisher_ACTUAL,
-        # node_rviz,
-        # node_hebi,
+        node_robot_state_publisher_ACTUAL,
+        node_rviz,
+        node_hebi,
         node_demo,
-        # node_usbcam,
-        # node_mapping,
-        # node_detector,
-        # node_webserver
 
         # # ALTERNATE: Start if we want the GUI to command the robot.
         # # THIS WILL BE **VERY** JITTERY, running at 10Hz!

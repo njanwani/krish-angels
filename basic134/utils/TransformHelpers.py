@@ -172,6 +172,9 @@ def pinter(p0, p1, s):
 def vinter(p0, p1, sdot):
     return      (p1-p0)*sdot
 
+def ainter(p0, p1, sdotdot):
+    return (p1-p0)*sdotdot
+
 def Rinter(R0, R1, s):
     (axis, angle) = axisangle_from_R(R0.T @ R1)
     return R0 @ Rote(axis, s*angle)

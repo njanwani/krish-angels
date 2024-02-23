@@ -59,17 +59,13 @@ class DetectorNode(Node):
         self.HSV_LIMITS = {}
         # self.HSV_LIMITS[TEN] = np.array([[83, 97], [162, 211], [132, 255]])
         # self.HSV_LIMITS[STRIKER] = np.array([[79, 173], [15, 89], [27, 59]])
-        self.HSV_LIMITS[QUEEN] = np.array([[98, 125], [172, 243], [173, 253]])
+        self.HSV_LIMITS[QUEEN] = np.array([[97, 108], [116, 200], [135, 192]])
         # self.HSV_LIMITS[TWENTY] = np.array([[0, 9], [203, 241], [150, 255]])
 
         self.hsv_board = np.array([[10, 22], [99, 224], [130, 214]])
 
         # publishers
-        self.PUB = {}
-        self.PUB[TEN] =       self.create_publisher(MarkerArray, name + TEN_TOPIC,3)
-        self.PUB[TWENTY] =    self.create_publisher(MarkerArray, name + TWENTY_TOPIC,3)
-        self.PUB[QUEEN] =     self.create_publisher(MarkerArray, name + QUEEN_TOPIC,3)
-        self.PUB[STRIKER] =   self.create_publisher(MarkerArray, name + STRIKER_TOPIC,3)
+        self.pub = self.create_publisher(PoseArray, '/' + name + '/pucks', 3)
         
         self.IM_PUB = {}
         self.IM_PUB[RGB_TOPIC] = self.create_publisher(Image, name + RGB_TOPIC, 3)
@@ -83,10 +79,9 @@ class DetectorNode(Node):
         self.BINARY_FILTER = {}
         self.BINARY_FILTER[TEN] = lambda b: cv2.erode(cv2.dilate(b, None, iterations=1), None, iterations=1)
         self.BINARY_FILTER[TWENTY] = lambda b: cv2.dilate(cv2.erode(b, None, iterations=0), None, iterations=1)
-        self.BINARY_FILTER[QUEEN] = lambda b: cv2.dilate(cv2.erode(b, None, iterations=1), None, iterations=1)
+        self.BINARY_FILTER[QUEEN] = lambda b: cv2.dilate(cv2.erode(b, None, iterations=0), None, iterations=0)
         self.BINARY_FILTER[STRIKER] = lambda b: cv2.erode(cv2.dilate(b, None, iterations=2), None, iterations=3)
         self.BINARY_FILTER[BOARD] = lambda b: cv2.dilate(cv2.erode(b, None, iterations=2), None, iterations=1)
-
         
         # annotation colors
         self.COLOR = {}
@@ -94,6 +89,12 @@ class DetectorNode(Node):
         self.COLOR[TWENTY] = self.blue
         self.COLOR[QUEEN] = self.green
         self.COLOR[STRIKER] = self.white
+
+        self.IDS = {}
+        self.IDS[TEN] = 0
+        self.IDS[TWENTY] = 1
+        self.IDS[QUEEN] = 2
+        self.IDS[STRIKER] = 3
         
         # Set up the OpenCV bridge.
         self.bridge = cv_bridge.CvBridge()
@@ -101,6 +102,8 @@ class DetectorNode(Node):
         # camera space to world frame transformation variables
         self.x0 = 0.323
         self.y0 = -0.002
+        self.last_markerCorners = None
+        self.last_markerIds = None
 
         # Finally, subscribe to the incoming image topic.  Using a
         # queue size of one means only the most recent message is
@@ -136,6 +139,8 @@ class DetectorNode(Node):
         
         frame = id_frame
         
+        posearray_msg = PoseArray()
+        poses = []
         
         for puck in self.HSV_LIMITS:
             # if puck == TWENTY: continue
@@ -225,26 +230,18 @@ class DetectorNode(Node):
                         ros_print(self, 'globalization failed')
                         continue
                     (xc, yc) = xyCenter
-                    ros_print(self, f'{xc}, {yc}')
-                        
-                
-                # msg = PoseArray()
-                # msg.poses = poses
-                # msg.header.frame_id = 'world'
-                # self.PUB[puck].publish(msg)
-                
-                msg = MarkerArray()
-                msg.markers = poses
-                self.PUB[puck].publish(msg)
+                    pose = Pose()
+                    pose.position.x = float(xc)
+                    pose.position.y = float(yc)
+                    pose.orientation.x = float(self.IDS[puck])
+                    poses.append(pose)
+                    # ros_print(self, f'{xc}, {yc}')
                 
                 
                 
-                
-    
+        posearray_msg.poses = poses
 
-        # # Convert the frame back into a ROS image and republish.
-        # frame = cv2.line(frame, (uc,0), (uc,H-1), self.white, 1)
-        # frame = cv2.line(frame, (0,vc), (W-1,vc), self.white, 1)
+        self.pub.publish(posearray_msg)
         self.IM_PUB[RGB_TOPIC].publish(self.bridge.cv2_to_imgmsg(frame, "rgb8"))
 
 
@@ -273,15 +270,21 @@ class DetectorNode(Node):
             cv2.aruco.drawDetectedMarkers(image, markerCorners, markerIds)
 
         # Abort if not all markers are detected.
-        if (markerIds is None or len(markerIds) != 4 or
-            set(markerIds.flatten()) != set([1,2,3,0])):
-            return None
+        if (markerIds is None or len(markerIds) != 4 or set(markerIds.flatten()) != set([1,2,3,0])):
+            if self.last_markerCorners == None:
+                return None
+            markerCorners = self.last_markerCorners
+            markerIds = self.last_markerIds
+            ros_print(self, 'WARNING: LOST MAPPING')
+            # return None
 
+        self.last_markerCorners = markerCorners
+        self.last_markerIds = markerIds
 
         # Determine the center of the marker pixel coordinates.
         uvMarkers = np.zeros((4,2), dtype='float32')
-        for i in range(4):
-            uvMarkers[markerIds[i],:] = np.mean(markerCorners[i], axis=1)
+        for i in range(len(markerIds)):
+            uvMarkers[i,:] = np.mean(markerCorners[i], axis=1)
 
         # Calculate the matching World coordinates of the 4 Aruco markers.
         # DX = 0.1016
@@ -298,6 +301,9 @@ class DetectorNode(Node):
                                 [1.12 + H/2, 0.343 + W/2],
                                 [0.018 + H/2, -0.175 - W/2], 
                                 [1.13 + H/2, -0.158  - W/2 - 0.0275]])
+        
+        xyMarkers = np.float32([xyMarkers[i] for i in markerIds])
+        assert(len(xyMarkers) == len(markerIds))
 
         # Create the perspective transform.
         M = cv2.getPerspectiveTransform(uvMarkers, xyMarkers)
