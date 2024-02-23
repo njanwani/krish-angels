@@ -8,6 +8,7 @@ import rclpy
 import cv_bridge
 from utils.pyutils import *
 from enum import Enum
+import time
 
 
 from rclpy.node         import Node
@@ -15,13 +16,15 @@ from sensor_msgs.msg    import Image
 from geometry_msgs.msg  import Point, Pose, PoseArray, Vector3
 from nav_msgs.msg       import Odometry
 from visualization_msgs.msg import Marker, MarkerArray
-from std_msgs.msg import ColorRGBA, Bool
+from std_msgs.msg import ColorRGBA, Bool, Float32
 
 RATE = 100.0  
 class Mode(Enum):
     START = 0
     TO_PUCK = 1
-    TO_HAND = 2
+    GRIP_IT = 2
+    TO_HAND = 3
+    LET_GO = 4
 
 # MAKE THIS MESSAGE DEPENDENT EVENTUALLY
 TEN = 0
@@ -29,7 +32,7 @@ TWENTY = 1
 QUEEN = 2
 STRIKER = 3
 
-EE_HEIGHT = 0.141
+EE_HEIGHT = 0.198 #0.141
 
 #
 #  Detector Node Class
@@ -50,12 +53,16 @@ class BrainNode(Node):
 
         self.to_grab = None
         self.ready = False
+        self.armed = False
 
         self.puck_sub = self.create_subscription(PoseArray, '/puckdetector/pucks', self.puck_cb, 10)
         self.ready_sub = self.create_subscription(Bool, '/low_level/ready', self.ready_cb, 10)
+        self.armed_sub = self.create_subscription(Bool, '/low_level/armed', self.armed_cb, 10)
 
         self.goal_pub = self.create_publisher(Pose, '/low_level/goal', 10)
-
+        self.grip_pub = self.create_publisher(Float32, '/low_level/grip', 10)
+        self.t = time.time()
+        self.t0 = self.t
 
         # Create a timer to keep calculating/sending commands.
         rate       = RATE
@@ -75,6 +82,11 @@ class BrainNode(Node):
     
     def ready_cb(self, msg: Bool):
         self.ready = msg.data
+        # self.armed = False
+        # ros_print(self, 'asdfasdf' + str(self.ready))
+
+    def armed_cb(self, msg: Bool):
+        self.armed = msg.data
         # ros_print(self, 'asdfasdf' + str(self.ready))
 
 
@@ -82,6 +94,8 @@ class BrainNode(Node):
         # ros_print(self, self.mode)
         publish = False
         goal = [np.zeros(3), 0]
+        grip = 0
+        self.t = time.time()
         if self.mode == Mode.START:
             pass
         elif self.mode == Mode.TO_PUCK:
@@ -94,15 +108,47 @@ class BrainNode(Node):
                                 self.to_grab.position.y,
                                 self.to_grab.position.z + EE_HEIGHT])
             goal[1] = 0
+            grip = 0
             publish = True
+            msg = Float32()
+            msg.data = 0.0
+            self.grip_pub.publish(msg)
+        elif self.mode == Mode.GRIP_IT:
+            msg = Float32()
+            msg.data = -2.1
+            self.grip_pub.publish(msg)
         elif self.mode == Mode.TO_HAND:
-            pass
+            goal[0] = np.array([0.5,
+                                0.0,
+                                EE_HEIGHT + 0.05])
+            goal[1] = 0
+            grip = 0
+            msg = Float32()
+            msg.data = -2.1
+            self.grip_pub.publish(msg)
+            publish = True
+        elif self.mode == Mode.LET_GO:
+            msg = Float32()
+            msg.data = 0.0
+            self.grip_pub.publish(msg)
         else:
             raise Exception('Invalid mode detected')
         
 
         if self.mode == Mode.START and self.ready:
             self.mode = Mode.TO_PUCK
+            self.t = time.time()
+            self.t0 = self.t
+        elif self.mode == Mode.TO_PUCK and self.armed:
+            self.t = time.time()
+            self.t0 = self.t
+            self.mode = Mode.GRIP_IT 
+        elif self.mode == Mode.GRIP_IT and self.t - self.t0 > 2:
+            self.mode = Mode.TO_HAND
+            self.t = time.time()
+            self.t0 = self.t
+        elif self.mode == Mode.TO_HAND and self.armed and self.t - self.t0 > 0.2:
+            self.mode = Mode.LET_GO
         
         
         if publish:

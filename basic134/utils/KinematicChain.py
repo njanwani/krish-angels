@@ -224,9 +224,11 @@ class KinematicChain():
         # qdot  = Jw_ @ xrdot
         qdot = KinematicChain.weighted_inv(J, gamma) @ xrdot
         q = np.array(qlast).reshape((5,1)) + dt * qdot
+        sing = False
+        if gamma > 1:
+            sing = True
         
-        
-        return (q.flatten(), qdot.flatten())
+        return (q.flatten(), qdot.flatten(), False)
 
 
 # point 1: x: 0.0095 y: -0.147  z: 0.0

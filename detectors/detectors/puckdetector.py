@@ -275,7 +275,7 @@ class DetectorNode(Node):
                 return None
             markerCorners = self.last_markerCorners
             markerIds = self.last_markerIds
-            ros_print(self, 'WARNING: LOST MAPPING')
+            # ros_print(self, 'WARNING: LOST MAPPING')
             # return None
 
         self.last_markerCorners = markerCorners

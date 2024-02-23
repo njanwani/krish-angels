@@ -58,8 +58,8 @@ class DemoNode(Node):
     AMAX    = VMAX / 10
     THOLD   = 1
 
-    GRIP_MIN = -1
-    GRIP_MAX = 1
+    GRIP_MIN = -np.inf
+    GRIP_MAX = np.inf
 
     POINT_LIB = (np.array([0.45, 0.15, 0.0]),           # side x
                  np.array([0.30, 0.0, 0.0]),            # middle x
@@ -78,7 +78,8 @@ class DemoNode(Node):
         self.t = 0
         self.t0 = self.t
         self.tmove = 2
-        self.mode = Mode.GRAV
+        self.mode = Mode.START
+        self.lastmode = None
 
         self.JS = {}
         self.JS['q0'] = np.array(self.position0)
@@ -101,7 +102,7 @@ class DemoNode(Node):
 
         # Create a subscriber to continually receive joint state messages.
         self.fbksub = self.create_subscription(JointState, '/joint_states', self.cb_states, 10)
-        self.grip_sub = self.create_subscription(Float32, '/grip', self.cb_grip, 10)
+        self.grip_sub = self.create_subscription(Float32, '/low_level/grip', self.cb_grip, 10)
         
         ros_print(self, 'waiting for feedback')
         while self.JS['q_act'] is None:
@@ -112,6 +113,8 @@ class DemoNode(Node):
         self.cmdpub = self.create_publisher(JointState, '/joint_commands', 10)
 
         self.ready = self.create_publisher(Bool, '/' + name + '/ready', 10)
+        self.armed_pub = self.create_publisher(Bool, '/' + name + '/armed', 10)
+        self.armed = False
 
         while not self.count_subscribers('/joint_commands'):
             pass
@@ -140,12 +143,17 @@ class DemoNode(Node):
 
     def recvpt(self, msg: Pose):
         if np.all(self.TS['goal'].x == self.TS['p0'].x) and np.all(self.TS['goal'].R == self.TS['p0'].R):
-            return 
+            return
+    
+        if msg.position.x > 1.0 or msg.position.x < 0.1 or msg.position.y > 0.4 or msg.position.y < -0.25:
+            ros_print(self, f'{msg.position.x, msg.position.y}')
+            return
         
-        R = Reye() @ Rotx(0) @ Roty(0) @ Rotz(msg.orientation.z)
+        R = Reye() @ Roty(0) @ Rotz(msg.orientation.z)
 
         if np.all(np.isclose(np.array([msg.position.x, msg.position.y, msg.position.z]), self.TS['goal'].x, atol=0.01)) and np.all(np.isclose(R, self.TS['goal'].R, atol=0.01)):
             return
+        self.armed = False
         
         v_last, a_last = 0,0
         if self.mode == Mode.TASK:
@@ -174,12 +182,12 @@ class DemoNode(Node):
         if self.mode == Mode.START:
             self.JS['q0'] = self.JS['q_act']
         self.effort.update(msg.effort[:-1])
-        ros_print(self, self.effort)
     
-    def gravity(self):
-        t_elbow = 8 * np.cos(self.JS['q_act'][1] - self.JS['q_act'][2])
-        t_shoulder = -t_elbow - 9.8 * np.cos(self.JS['q_act'][1])
-        return t_shoulder, t_elbow
+    def gravity(self, q):
+        t_wrist = 0.4 * np.sin(q[3] - q[2] + q[1])
+        t_elbow = 5.5 * np.cos(q[1] - q[2]) - t_wrist #5.65 
+        t_shoulder = -t_elbow - 7.7 * np.cos(q[1])
+        return t_shoulder, t_elbow, t_wrist
 
     # Shutdown
     def shutdown(self):
@@ -211,7 +219,12 @@ class DemoNode(Node):
 
         # ros_print(self, f'p {p}')
         
-        q, qdot = self.chain.ikin(1 / RATE, self.JS['q_act'], p.reshape((3,1)), v.reshape((3,1)), w, R)
+        q, qdot, sing = self.chain.ikin(1 / RATE, self.JS['q_act'], p.reshape((3,1)), v.reshape((3,1)), w, R)
+        if sing:
+            mode = Mode.JOINT
+            self.t0 = self.t 
+            self.JS['q0'] = self.JS['q_act']
+            self.tmove = splinetime(self.JS['q0'], self.JS['q_start'], 0, 0, DemoNode.VMAX, DemoNode.AMAX, cartesian=False)
         return q, qdot
 
     # Send a command - called repeatedly by the timer.
@@ -222,32 +235,36 @@ class DemoNode(Node):
         nan = float("nan")
         ready = False
         
-        t_shoulder, t_elbow = self.gravity()
         q, qdot, qeff = None, None, None
         if self.mode == Mode.START:
             q = [nan] * 5
-            qdot = [nan] * 5
-            qeff = spline5(self.t - self.t0, self.tmove, 0, 1, 0, 0, 0, 0)[0] * np.array([0.0, t_shoulder, t_elbow, 0.0, 0.0])
+            qdot = np.zeros(5)
+            t_shoulder, t_elbow, t_wrist = self.gravity(self.JS['q_act'])
+            qeff = spline5(self.t - self.t0, self.tmove, 0.4, 1, 0, 0, 0, 0)[0] * np.array([0.0, t_shoulder, t_elbow, t_wrist, 0.0])
 
         elif self.mode == Mode.GRAV:
             q = [nan] * 5
-            q[1] = -np.pi / 2
             qdot = [nan] * 5
-            qeff = np.array([0.0, t_shoulder, t_elbow, 0.0, 0.0])
+            t_shoulder, t_elbow, t_wrist = self.gravity(self.JS['q_act'])
+            qeff = np.array([0.0, t_shoulder, t_elbow, t_wrist, 0.0])
 
         elif self.mode == Mode.TASK:
             s, sdot, _ = self.state_space()
             q, qdot = self.compute_ts_spline(s, sdot)
-            qeff = np.array([0.0, t_shoulder, t_elbow, 0.0, 0.0])
+            t_shoulder, t_elbow, t_wrist = self.gravity(q)
+            qeff = np.array([0.0, t_shoulder, t_elbow, t_wrist, 0.0])
             ready = True
+            self.armed = False
 
         elif self.mode == Mode.JOINT:
             q, qdot, _ = spline5(self.t - self.t0, self.tmove, self.JS['q0'], self.JS['q_start'], 0, 0, 0, 0)
-            qeff = np.array([0.0, t_shoulder, t_elbow, 0.0, 0.0])
+            t_shoulder, t_elbow, t_wrist = self.gravity(q)
+            qeff = np.array([0.0, t_shoulder, t_elbow, t_wrist, 0.0])
 
         elif self.mode == Mode.STILL:
             q, qdot = self.JS['q_last'], np.zeros(5)
-            qeff = np.array([0.0, t_shoulder, t_elbow, 0.0, 0.0])
+            t_shoulder, t_elbow, t_wrist = self.gravity(q)
+            qeff = np.array([0.0, t_shoulder, t_elbow, t_wrist, 0.0])
             ready = True
         
         else:
@@ -257,12 +274,14 @@ class DemoNode(Node):
         self.JS['qd_last'] = qdot
 
         if self.mode == Mode.START and self.t - self.t0 > self.tmove:
+            self.lastmode = self.mode
             self.mode = Mode.JOINT
             self.tmove = splinetime(self.JS['q0'], self.JS['q_start'], 0, 0, DemoNode.VMAX, DemoNode.AMAX, cartesian=False)
             self.t0 = self.t
 
         elif self.mode == Mode.JOINT and self.t - self.t0 > self.tmove:
-            self.mode = Mode.TASK
+            self.lastmode = self.mode
+            self.mode = Mode.STILL
             self.t0 = self.t
             self.TS['p0'] = RobotPose(*(self.chain.fkin(self.JS['q_last'])[:2]))
             self.tmove = splinetime(self.TS['p0'].x, self.TS['goal'].x, v0=0, vf=0)
@@ -270,9 +289,9 @@ class DemoNode(Node):
             # setup splinetime
 
         elif self.mode == Mode.TASK and self.t - self.t0 > self.tmove:
+            self.lastmode = self.mode
+            self.armed = True
             self.mode = Mode.STILL
-
-        # ros_print(self, self.mode)
         
         
         self.cmdmsg.position = list(q) + [nan]
@@ -282,6 +301,11 @@ class DemoNode(Node):
         boolmsg = Bool()
         boolmsg.data = ready
         self.ready.publish(boolmsg)
+        
+        boolmsg = Bool()
+        boolmsg.data = self.armed
+        self.armed_pub.publish(boolmsg)
+
 
 
 # mais je suis francais oh honhonhonhonhon
