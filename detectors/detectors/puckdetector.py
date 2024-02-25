@@ -59,7 +59,7 @@ class DetectorNode(Node):
         self.HSV_LIMITS = {}
         # self.HSV_LIMITS[TEN] = np.array([[83, 97], [162, 211], [132, 255]])
         # self.HSV_LIMITS[STRIKER] = np.array([[79, 173], [15, 89], [27, 59]])
-        self.HSV_LIMITS[QUEEN] = np.array([[97, 108], [116, 200], [135, 192]])
+        self.HSV_LIMITS[QUEEN] = np.array([[88, 117], [98, 255], [126, 199]])
         # self.HSV_LIMITS[TWENTY] = np.array([[0, 9], [203, 241], [150, 255]])
 
         self.hsv_board = np.array([[10, 22], [99, 224], [130, 214]])
@@ -79,7 +79,7 @@ class DetectorNode(Node):
         self.BINARY_FILTER = {}
         self.BINARY_FILTER[TEN] = lambda b: cv2.erode(cv2.dilate(b, None, iterations=1), None, iterations=1)
         self.BINARY_FILTER[TWENTY] = lambda b: cv2.dilate(cv2.erode(b, None, iterations=0), None, iterations=1)
-        self.BINARY_FILTER[QUEEN] = lambda b: cv2.dilate(cv2.erode(b, None, iterations=0), None, iterations=0)
+        self.BINARY_FILTER[QUEEN] = lambda b: cv2.dilate(cv2.erode(b, None, iterations=0), None, iterations=1)
         self.BINARY_FILTER[STRIKER] = lambda b: cv2.erode(cv2.dilate(b, None, iterations=2), None, iterations=3)
         self.BINARY_FILTER[BOARD] = lambda b: cv2.dilate(cv2.erode(b, None, iterations=2), None, iterations=1)
         
@@ -157,7 +157,7 @@ class DetectorNode(Node):
                 poses = []
                 for contour in contours:
                     area = cv2.contourArea(contour)
-                    if area < 30:
+                    if area < 100:
                         continue
                     
                     ((ur, vr), radius) = cv2.minEnclosingCircle(contour)
@@ -205,8 +205,8 @@ class DetectorNode(Node):
                                 cv2.circle(frame, (cx, cy), 8, self.COLOR[puck], 2)
                                 cv2.circle(frame, (cx, cy), 2, self.COLOR[puck], -1)
 
-                    # if not np.isclose(expected_area / area, 1.0, atol=0.65):
-                    #     continue
+                    if not np.isclose(expected_area / area, 1.0, atol=0.65):
+                        continue
                     
                     if puck == STRIKER:
                         discard = False

@@ -32,7 +32,19 @@ TWENTY = 1
 QUEEN = 2
 STRIKER = 3
 
-EE_HEIGHT = 0.198 #0.141
+EE_HEIGHT = 0.193 #0.141
+
+class Filter:
+    def __init__(self, T, x0):
+        self.x = x0
+        self.T = T
+        self.t = time.time()
+
+    def update(self, u):
+        u = np.array(u)
+        dt = time.time() - self.t
+        self.t = time.time()
+        self.x = self.x + dt / self.T * (u - self.x)
 
 #
 #  Detector Node Class
@@ -60,9 +72,10 @@ class BrainNode(Node):
         self.armed_sub = self.create_subscription(Bool, '/low_level/armed', self.armed_cb, 10)
 
         self.goal_pub = self.create_publisher(Pose, '/low_level/goal', 10)
-        self.grip_pub = self.create_publisher(Float32, '/low_level/grip', 10)
+        self.grip_pub = self.create_publisher(Bool, '/low_level/grip', 10)
         self.t = time.time()
         self.t0 = self.t
+        self.grip = False
 
         # Create a timer to keep calculating/sending commands.
         rate       = RATE
@@ -94,7 +107,7 @@ class BrainNode(Node):
         # ros_print(self, self.mode)
         publish = False
         goal = [np.zeros(3), 0]
-        grip = 0
+        grip = False
         self.t = time.time()
         if self.mode == Mode.START:
             pass
@@ -107,30 +120,23 @@ class BrainNode(Node):
             goal[0] = np.array([self.to_grab.position.x,
                                 self.to_grab.position.y,
                                 self.to_grab.position.z + EE_HEIGHT])
-            goal[1] = 0
-            grip = 0
+            goal[1] = np.arctan2(self.to_grab.position.y, self.to_grab.position.x)
+            grip = False
             publish = True
-            msg = Float32()
-            msg.data = 0.0
-            self.grip_pub.publish(msg)
         elif self.mode == Mode.GRIP_IT:
-            msg = Float32()
-            msg.data = -2.1
-            self.grip_pub.publish(msg)
+            publish = True
+            grip = True
+            # FIX GOAL SHIT
         elif self.mode == Mode.TO_HAND:
             goal[0] = np.array([0.5,
                                 0.0,
-                                EE_HEIGHT + 0.05])
+                                EE_HEIGHT + 0.2])
             goal[1] = 0
-            grip = 0
-            msg = Float32()
-            msg.data = -2.1
-            self.grip_pub.publish(msg)
+            grip = True
             publish = True
         elif self.mode == Mode.LET_GO:
-            msg = Float32()
-            msg.data = 0.0
-            self.grip_pub.publish(msg)
+            publish = True
+            grip = False
         else:
             raise Exception('Invalid mode detected')
         
@@ -143,21 +149,24 @@ class BrainNode(Node):
             self.t = time.time()
             self.t0 = self.t
             self.mode = Mode.GRIP_IT 
-        elif self.mode == Mode.GRIP_IT and self.t - self.t0 > 2:
+        elif self.mode == Mode.GRIP_IT and self.armed and self.t - self.t0 > 0.2:
             self.mode = Mode.TO_HAND
             self.t = time.time()
             self.t0 = self.t
         elif self.mode == Mode.TO_HAND and self.armed and self.t - self.t0 > 0.2:
             self.mode = Mode.LET_GO
         
-        
         if publish:
             posemsg = Pose()
             posemsg.position.x = float(goal[0][0])
             posemsg.position.y = float(goal[0][1])
             posemsg.position.z = float(goal[0][2])
-            posemsg.orientation.z = 0.0 #float(goal[1])
+            posemsg.orientation.z = float(goal[1])
             self.goal_pub.publish(posemsg)
+
+            msg = Bool()
+            msg.data = grip
+            self.grip_pub.publish(msg)
 
     # Shutdown
     def shutdown(self):

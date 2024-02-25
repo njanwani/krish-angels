@@ -46,6 +46,14 @@ def generate_launch_description():
         executable = 'robot_state_publisher',
         output     = 'screen',
         parameters = [{'robot_description': robot_description}])
+    
+    node_robot_state_publisher_COMMAND = Node(
+        name       = 'robot_state_publisher', 
+        package    = 'robot_state_publisher',
+        executable = 'robot_state_publisher',
+        output     = 'screen',
+        parameters = [{'robot_description': robot_description}],
+        remappings = [('/joint_states', '/joint_commands')])
 
     # Configure a node for RVIZ
     node_rviz = Node(
@@ -115,7 +123,8 @@ def generate_launch_description():
     
     # Return the description, built as a python list.
     return LaunchDescription([
-        node_robot_state_publisher_ACTUAL,
+        # node_robot_state_publisher_ACTUAL,
+        node_robot_state_publisher_COMMAND,
         node_rviz,
         node_hebi,
         low_level,

@@ -220,9 +220,9 @@ class KinematicChain():
         # ros_print(self.node, Jw.shape)
         _, S, _ = np.linalg.svd(np.linalg.pinv(J))
         gamma = 0.1 * np.log(1 / np.min(np.abs(S)))
-        ros_print(self.node, gamma)
-        # qdot  = Jw_ @ xrdot
-        qdot = KinematicChain.weighted_inv(J, gamma) @ xrdot
+        # ros_print(self.node, gamma)
+        qdot  = np.linalg.pinv(J) @ xrdot
+        # qdot = KinematicChain.weighted_inv(J, gamma) @ xrdot
         q = np.array(qlast).reshape((5,1)) + dt * qdot
         sing = False
         if gamma > 1:

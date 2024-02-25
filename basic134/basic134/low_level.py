@@ -33,9 +33,10 @@ class Mode(Enum):
     STILL = 5
 
 class RobotPose:
-    def __init__(self, x, R):
+    def __init__(self, x, R, theta=0):
         self.x = x
         self.R = R
+        self.theta = theta
 
 class Filter:
     def __init__(self, T, x0):
@@ -58,8 +59,8 @@ class DemoNode(Node):
     AMAX    = VMAX / 10
     THOLD   = 1
 
-    GRIP_MIN = -np.inf
-    GRIP_MAX = np.inf
+    GRIP_MIN = -3
+    GRIP_MAX = 0
 
     POINT_LIB = (np.array([0.45, 0.15, 0.0]),           # side x
                  np.array([0.30, 0.0, 0.0]),            # middle x
@@ -72,7 +73,12 @@ class DemoNode(Node):
         # Initialize the node, naming it as specified
         super().__init__(name)
         self.chain = KC(self, 'world', 'endmotor', ['base', 'shoulder', 'elbow', 'wrist', 'end'])
-        self.position0 = self.grabfbk()[:-1]
+        self.grip_cmd = 0
+        self.grip_act = 0
+        self.grip_0 = 0
+        self.position0 = self.grabfbk()
+        self.grip_0 = self.position0[-1]
+        self.position0 = self.position0[:-1]
         self.queue = []
 
         self.t = 0
@@ -98,11 +104,11 @@ class DemoNode(Node):
         self.sdotdot_last = 0
 
         self.effort = Filter(1, 0)
-        self.grip = 0
+        
 
         # Create a subscriber to continually receive joint state messages.
         self.fbksub = self.create_subscription(JointState, '/joint_states', self.cb_states, 10)
-        self.grip_sub = self.create_subscription(Float32, '/low_level/grip', self.cb_grip, 10)
+        self.grip_sub = self.create_subscription(Bool, '/low_level/grip', self.cb_grip, 10)
         
         ros_print(self, 'waiting for feedback')
         while self.JS['q_act'] is None:
@@ -127,8 +133,28 @@ class DemoNode(Node):
         self.timer = self.create_timer(1 / rate, self.sendcmd)
         ros_print(self, 'Node started')
     
-    def cb_grip(self, msg: Float32):
-        self.grip = min(max(msg.data, self.GRIP_MIN), self.GRIP_MAX)
+    def cb_grip(self, msg: Bool):
+        changed = False
+        offset_z = 0.03
+        if msg.data and self.grip_cmd != self.GRIP_MIN:
+            self.grip_cmd = self.GRIP_MIN
+            changed = True
+            
+        elif not msg.data and self.grip_cmd != self.GRIP_MAX:
+            self.grip_cmd = self.GRIP_MAX
+            changed = True
+            offset_z *= -1
+        
+        if changed:
+            pose = Pose()
+            pose.position.x = float(self.TS['goal'].x[0])
+            pose.position.y = float(self.TS['goal'].x[1])
+            pose.position.z = float(self.TS['goal'].x[2] + offset_z)
+            pose.orientation.z = float(self.TS['goal'].theta)
+
+            self.recvpt(pose, gripping=True)
+
+
 
     def state_space(self):
         if self.mode == Mode.STILL:
@@ -141,20 +167,25 @@ class DemoNode(Node):
                                                      a0=self.sdotdot_last,
                                                      af=0)
 
-    def recvpt(self, msg: Pose):
+    def recvpt(self, msg: Pose, gripping = False):
+        msg.position.y = msg.position.y + 0.02 + 0.02 * msg.position.y
+        msg.position.x = msg.position.x - 0.02 * msg.position.y
+        ros_print(self, msg.position.y)
         if np.all(self.TS['goal'].x == self.TS['p0'].x) and np.all(self.TS['goal'].R == self.TS['p0'].R):
             return
     
-        if msg.position.x > 1.0 or msg.position.x < 0.1 or msg.position.y > 0.4 or msg.position.y < -0.25:
-            ros_print(self, f'{msg.position.x, msg.position.y}')
+        if msg.position.x > 1.0 or msg.position.x < 0.1 or msg.position.y > 0.5 or msg.position.y < -0.3:
+            # ros_print(self, f'{msg.position.x, msg.position.y}')
             return
         
         R = Reye() @ Roty(0) @ Rotz(msg.orientation.z)
-
-        if np.all(np.isclose(np.array([msg.position.x, msg.position.y, msg.position.z]), self.TS['goal'].x, atol=0.01)) and np.all(np.isclose(R, self.TS['goal'].R, atol=0.01)):
+        
+        if np.all(np.isclose(np.array([msg.position.x, msg.position.y, msg.position.z]), self.TS['goal'].x, atol=0.01)) \
+           and np.all(np.isclose(R, self.TS['goal'].R, atol=0.01)) \
+           and not gripping:
             return
         self.armed = False
-        
+        ros_print(self, 'RE_SPLINE')
         v_last, a_last = 0,0
         if self.mode == Mode.TASK:
             _, v_last, a_last = spline5(self.t - self.t0, self.tmove, self.TS['p0'].x.flatten(), self.TS['goal'].x.flatten(), self.TS['v0'],0, self.TS['a0'], 0)
@@ -164,20 +195,22 @@ class DemoNode(Node):
                                       msg.position.y,
                                       msg.position.z])
         self.TS['goal'].R = R
+        self.TS['goal'].theta = msg.orientation.z
         self.TS['p0'] = RobotPose(*(self.chain.fkin(self.JS['q_last'])[:2]))
 
 
         if self.mode in [Mode.STILL, Mode.TASK]:
             self.mode = Mode.TASK
             self.t0 = self.t
-            self.tmove = splinetime(self.TS['p0'].x, self.TS['goal'].x, v0=v_last, vf=0)
+            self.grip_0 = self.grip_act
+            self.tmove = splinetime(self.TS['p0'].x, self.TS['goal'].x, v0=v_last, vf=0) + int(gripping) + 1
             self.s_last = 0
             self.TS['v0'] = v_last
             self.TS['a0'] = a_last
-            ros_print(self, f'vlast = {v_last}')
     
     # Save the actual position.
     def cb_states(self, msg: JointState):
+        self.grip_act = msg.position[-1]
         self.JS['q_act'] = np.array(msg.position)[:-1]
         if self.mode == Mode.START:
             self.JS['q0'] = self.JS['q_act']
@@ -216,10 +249,12 @@ class DemoNode(Node):
         p, v, _ = spline5(self.t - self.t0, self.tmove, self.TS['p0'].x.flatten(), self.TS['goal'].x.flatten(), self.TS['v0'],0, self.TS['a0'], 0)
         R = Rinter(self.TS['p0'].R, self.TS['goal'].R, s)
         w = winter(self.TS['p0'].R, self.TS['goal'].R, sdot)
+        gq, gqdot, _ = spline5(self.t - self.t0, self.tmove, self.grip_0, self.grip_cmd, 0, 0, 0, 0)
 
         # ros_print(self, f'p {p}')
         
-        q, qdot, sing = self.chain.ikin(1 / RATE, self.JS['q_act'], p.reshape((3,1)), v.reshape((3,1)), w, R)
+        q, qdot, sing = self.chain.ikin(1 / RATE, self.JS['q_last'], p.reshape((3,1)), v.reshape((3,1)), w, R)
+        q, qdot = np.array(list(q) + [gq]), np.array(list(qdot) + [gqdot])
         if sing:
             mode = Mode.JOINT
             self.t0 = self.t 
@@ -237,41 +272,43 @@ class DemoNode(Node):
         
         q, qdot, qeff = None, None, None
         if self.mode == Mode.START:
-            q = [nan] * 5
-            qdot = np.zeros(5)
+            q = [nan] * 6
+            qdot = np.zeros(6)
             t_shoulder, t_elbow, t_wrist = self.gravity(self.JS['q_act'])
-            qeff = spline5(self.t - self.t0, self.tmove, 0.4, 1, 0, 0, 0, 0)[0] * np.array([0.0, t_shoulder, t_elbow, t_wrist, 0.0])
+            qeff = spline5(self.t - self.t0, self.tmove, 0.0, 1, 0, 0, 0, 0)[0] * np.array([0.0, t_shoulder, t_elbow, t_wrist, 0.0, nan])
 
         elif self.mode == Mode.GRAV:
-            q = [nan] * 5
-            qdot = [nan] * 5
+            q = [nan] * 6
+            qdot = [nan] * 6
             t_shoulder, t_elbow, t_wrist = self.gravity(self.JS['q_act'])
-            qeff = np.array([0.0, t_shoulder, t_elbow, t_wrist, 0.0])
+            qeff = np.array([0.0, t_shoulder, t_elbow, t_wrist, 0.0, 0.0])
 
         elif self.mode == Mode.TASK:
             s, sdot, _ = self.state_space()
             q, qdot = self.compute_ts_spline(s, sdot)
             t_shoulder, t_elbow, t_wrist = self.gravity(q)
-            qeff = np.array([0.0, t_shoulder, t_elbow, t_wrist, 0.0])
+            qeff = np.array([0.0, t_shoulder, t_elbow, t_wrist, 0.0, 0.0])
             ready = True
             self.armed = False
 
         elif self.mode == Mode.JOINT:
             q, qdot, _ = spline5(self.t - self.t0, self.tmove, self.JS['q0'], self.JS['q_start'], 0, 0, 0, 0)
+            q, qdot = np.array(list(q) + [self.grip_cmd]), np.array(list(qdot) + [self.grip_cmd])
             t_shoulder, t_elbow, t_wrist = self.gravity(q)
-            qeff = np.array([0.0, t_shoulder, t_elbow, t_wrist, 0.0])
+            qeff = np.array([0.0, t_shoulder, t_elbow, t_wrist, 0.0, 0.0])
 
         elif self.mode == Mode.STILL:
             q, qdot = self.JS['q_last'], np.zeros(5)
+            q, qdot = np.array(list(q) + [self.grip_cmd]), np.array(list(qdot) + [0])
             t_shoulder, t_elbow, t_wrist = self.gravity(q)
-            qeff = np.array([0.0, t_shoulder, t_elbow, t_wrist, 0.0])
+            qeff = np.array([0.0, t_shoulder, t_elbow, t_wrist, 0.0, 0.0])
             ready = True
         
         else:
             raise Exception('OOPS')
         
-        self.JS['q_last'] = q
-        self.JS['qd_last'] = qdot
+        self.JS['q_last'] = q[:-1]
+        self.JS['qd_last'] = qdot[:-1]
 
         if self.mode == Mode.START and self.t - self.t0 > self.tmove:
             self.lastmode = self.mode
@@ -293,10 +330,11 @@ class DemoNode(Node):
             self.armed = True
             self.mode = Mode.STILL
         
+        # q = q + np.array([0, 0, 0, 0, 0])
         
-        self.cmdmsg.position = list(q) + [nan]
-        self.cmdmsg.velocity = list(qdot) + [nan]
-        self.cmdmsg.effort = list(qeff) + [float(self.grip)]
+        self.cmdmsg.position = list(q)
+        self.cmdmsg.velocity = list(qdot)
+        self.cmdmsg.effort = list(qeff)
         self.cmdpub.publish(self.cmdmsg)
         boolmsg = Bool()
         boolmsg.data = ready
