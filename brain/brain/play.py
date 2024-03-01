@@ -12,10 +12,10 @@ import time
 
 from rclpy.node         import Node
 from sensor_msgs.msg    import Image
-from geometry_msgs.msg  import Point, Pose, PoseArray, Vector3
+from geometry_msgs.msg  import PointStamped, Pose, PoseArray, Vector3
 from nav_msgs.msg       import Odometry
 from visualization_msgs.msg import Marker, MarkerArray
-from std_msgs.msg import ColorRGBA, Bool, Float32
+from std_msgs.msg import ColorRGBA, Bool, Float32, Header
 
 RATE = 100.0  
 class Mode(Enum):
@@ -61,8 +61,12 @@ class BrainNode(Node):
         self.moves = []
 
         self.puck_sub = self.create_subscription(PoseArray, '/puckdetector/pucks', self.puck_cb, 10)
-        self.ready_sub = self.create_subscription(Bool, '/low_level/ready', self.ready_cb, 1)
-        self.armed_sub = self.create_subscription(Bool, '/low_level/armed', self.armed_cb, 1)
+        # self.ready_sub = self.create_subscription(Bool, '/low_level/ready', self.ready_cb, 1)
+        # self.armed_sub = self.create_subscription(Bool, '/low_level/armed', self.armed_cb, 1)
+        self.goal_received_sub = self.create_subscription(Header, 'low_level/goal_received', self.goal_received, 1)
+        self.ready_armed_sub = self.create_subscription(PointStamped, 'low_level/ready_armed', self.ready_armed_cb, 1)
+        self.ready_armed_update_t = 0
+        self.last_move_t = -1
 
         self.goal_pub = self.create_publisher(Pose, '/low_level/goal_2', 10)
         self.grip_pub = self.create_publisher(Bool, '/low_level/grip', 10)
@@ -76,6 +80,10 @@ class BrainNode(Node):
         self.timer = self.create_timer(1 / rate, self.think)
         rate       = 20.0
         self.timer = self.create_timer(1 / rate, self.work)
+
+    def goal_received(self, msg: Header):
+        ros_print(self, 'I AM RECEIVED')
+        self.last_move_t = float(msg.stamp.sec)
 
     def puck_cb(self, msg: PoseArray):
         while self.updating_pucks:
@@ -98,26 +106,22 @@ class BrainNode(Node):
             self.pucks[pose.orientation.x].append(np.array([pose.position.x, pose.position.y, EE_HEIGHT + BOARD_HEIGHT]))
         self.updating_pucks = False
 
-    def ready_cb(self, msg: Bool):
-        self.ready = msg.data
-        self.ready_update = True
-
-    def armed_cb(self, msg: Bool):
-        self.armed = msg.data
-        self.armed_update = True
+    def ready_armed_cb(self, msg: PointStamped):
+        self.ready_armed_update_t = float(msg.header.stamp.sec)
+        self.ready = bool(float(msg.point.x))
+        self.armed = bool(float(msg.point.y))
+        ros_print(self, f'aklsjd {self.armed}')
 
     def work(self):
-        self.t = time.time()
+        self.t, _ = self.get_clock().now().seconds_nanoseconds()
         if self.moves == []:
             return
         
-        if not self.armed_update or not self.ready_update:
-            time.sleep(0.2)
+        if self.last_move_t >= self.ready_armed_update_t:
             return
-        ros_print(self, f'{type(self.moves[0])} and {self.armed} and {self.ready} and {self.moves[0].mode}')
+        
+        # ros_print(self, f'{type(self.moves[0])} and {self.armed} and {self.ready} and {self.moves[0].mode}')
         goal, grip, strike = self.moves[0].step(self.t, self.ready, self.armed)
-        self.armed_update = False
-        self.ready_update = False
 
         if not (goal is None):
             # ros_print(self, f'{self.moves[0].mode}')
@@ -127,19 +131,20 @@ class BrainNode(Node):
             posemsg.position.z = float(goal[0][2])
             posemsg.orientation.z = float(goal[1])
             self.goal_pub.publish(posemsg)
-            self.armed = False
-            self.ready = False
+            # self.last_move_t, _ = self.get_clock().now().seconds_nanoseconds()
 
         if not (grip is None):
             msg = Bool()
             msg.data = grip
             self.grip_pub.publish(msg)
+            # self.last_move_t, _ = self.get_clock().now().seconds_nanoseconds()
 
         if not (strike is None):
             msg = Float32()
             msg.data = float(strike)
             ros_print(self, f'sending {strike}')
             self.strike_pub.publish(msg)
+            # self.last_move_t, _ = self.get_clock().now().seconds_nanoseconds()
 
         if self.moves[0].done:
             ros_print(self, 'MOVING ON')
@@ -158,11 +163,11 @@ class BrainNode(Node):
             
         if self.moves == [] and not (self.focus is None):
             self.moves.append(Grab(self.focus))
-            self.moves.append(Wait(3.0))
+            # self.moves.append(Wait(3.0))
             self.moves.append(Move(pos=np.mean(np.vstack((self.focus, endgoal)), axis=0) + np.array([0,0, EE_HEIGHT + BOARD_HEIGHT + 0.05]), angle=0))
-            self.moves.append(Wait(3.0))
+            # self.moves.append(Wait(3.0))
             self.moves.append(Drop(pos=endgoal))
-            self.moves.append(Wait(3.0))
+            # self.moves.append(Wait(3.0))
             self.moves.append(Strike(pos=endgoal, angle=0))
             self.moves.append(Wait(3.0))
 
