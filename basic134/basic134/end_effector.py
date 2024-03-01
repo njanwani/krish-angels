@@ -36,7 +36,7 @@ class DemoNode(Node):
     def __init__(self, name):
         super().__init__(name)
         
-        self.striker_subscriber = self.create_subscription(Point, '/striker_states', self.serial_callback, 10)
+        self.striker_subscriber = self.create_subscription(Float32, '/end_effector/strike', self.serial_callback, 10)
         #self.gripper_subscriber = self.create_subscription(JointState, '/gripper_states', self.gripper_callback, 10)
         
         self.ser = serial.Serial(DEVICE_PATH, BAUD, timeout = TIMEOUT)
@@ -56,7 +56,7 @@ class DemoNode(Node):
             self.get_logger().info("Received message: " + line)
     
     def serial_callback(self, msg):
-        pwmVal = int(msg.x)
+        pwmVal = int(msg.data)
         self.send_data(str(pwmVal))
         
         

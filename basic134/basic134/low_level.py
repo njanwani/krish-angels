@@ -126,7 +126,7 @@ class DemoNode(Node):
             pass
 
         # Create a subscriber to receive point messages.
-        self.recvpt_sub = self.create_subscription(Pose, f'/{name}/goal', self.recvpt, 10)
+        self.recvpt_sub = self.create_subscription(Pose, f'/{name}/goal_2', self.recvpt, 10)
 
         # Create a timer to keep calculating/sending commands.
         rate       = RATE
@@ -169,8 +169,8 @@ class DemoNode(Node):
 
     def recvpt(self, msg: Pose, gripping = False):
         msg.position.y = msg.position.y + 0.02 + 0.02 * msg.position.y
-        msg.position.x = msg.position.x - 0.02 * msg.position.y
-        ros_print(self, msg.position.y)
+        msg.position.x = msg.position.x - 0.042 * msg.position.y
+        # ros_print(self, msg.position.y)
         if np.all(self.TS['goal'].x == self.TS['p0'].x) and np.all(self.TS['goal'].R == self.TS['p0'].R):
             return
     
@@ -217,9 +217,9 @@ class DemoNode(Node):
         self.effort.update(msg.effort[:-1])
     
     def gravity(self, q):
-        t_wrist = 0.4 * np.sin(q[3] - q[2] + q[1])
-        t_elbow = 5.5 * np.cos(q[1] - q[2]) - t_wrist #5.65 
-        t_shoulder = -t_elbow - 7.7 * np.cos(q[1])
+        t_wrist = 0.5 * np.sin(q[3] - q[2] + q[1])
+        t_elbow = 7.5 * np.cos(q[1] - q[2]) - t_wrist #5.65 
+        t_shoulder = -t_elbow - 8.9 * np.cos(q[1])
         return t_shoulder, t_elbow, t_wrist
 
     # Shutdown
@@ -264,6 +264,7 @@ class DemoNode(Node):
 
     # Send a command - called repeatedly by the timer.
     def sendcmd(self):
+        # ros_print(self, self.mode)
         self.t += 1 / RATE
         self.cmdmsg.header.stamp = self.get_clock().now().to_msg()
         self.cmdmsg.name         = ['base', 'shoulder', 'elbow', 'wrist', 'end', 'grip']

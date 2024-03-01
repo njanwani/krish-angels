@@ -23,6 +23,7 @@ setup(
     entry_points={
         'console_scripts': [
             'touch = brain.touch:main',
+            'play = brain.play:main',
         ],
     },
 )

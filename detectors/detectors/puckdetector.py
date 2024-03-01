@@ -16,8 +16,7 @@ from sklearn.cluster import KMeans
 # ROS Imports
 import rclpy
 import cv_bridge
-from utils.pyutils import *
-
+# from utils.pyutils import ros_print
 from rclpy.node         import Node
 from sensor_msgs.msg    import Image
 from geometry_msgs.msg  import Point, Pose, PoseArray, Vector3
@@ -57,7 +56,7 @@ class DetectorNode(Node):
 
         # Thresholds in Hmin/max, Smin/max, Vmin/max
         self.HSV_LIMITS = {}
-        # self.HSV_LIMITS[TEN] = np.array([[83, 97], [162, 211], [132, 255]])
+        self.HSV_LIMITS[TEN] = np.array([[72, 93], [32, 151], [39, 156]])
         # self.HSV_LIMITS[STRIKER] = np.array([[79, 173], [15, 89], [27, 59]])
         self.HSV_LIMITS[QUEEN] = np.array([[88, 117], [98, 255], [126, 199]])
         # self.HSV_LIMITS[TWENTY] = np.array([[0, 9], [203, 241], [150, 255]])
@@ -111,7 +110,7 @@ class DetectorNode(Node):
         self.sub = self.create_subscription(
             Image, '/image_raw', self.process, 1)
         
-        ros_print(self, 'here!')
+        # ros_print(self, 'here!')
 
 
     # Shutdown
@@ -154,7 +153,6 @@ class DetectorNode(Node):
             self.IM_PUB[puck].publish(self.bridge.cv2_to_imgmsg(binary, "mono8"))
             if len(contours) > 0:
                 # Pick the largest contour.
-                poses = []
                 for contour in contours:
                     area = cv2.contourArea(contour)
                     if area < 100:
@@ -168,42 +166,6 @@ class DetectorNode(Node):
                     
                     k=0
                     expected_area = radius**2 * np.pi
-                    if puck == TEN:
-                        if 0 <= area <= 350.0:
-                            k=1
-                        elif 350.0 < area <= 600.0:
-                            k=2
-                        elif 600.0 < area <= 900.0:
-                            k=3
-                        else:
-                            k=4
-                        # ros_print(self, f'Area {area}, {k} pucks')
-                        
-                        if k > 1:
-                            features = np.array(binary.nonzero()).T
-                            # ros_print(self, binary)
-                            new_features = []
-                            for pt in features:
-                                # ros_print(self, pt)
-                                if np.linalg.norm(pt - np.array([vr,ur])) < radius:
-                                    new_features.append(pt)
-                            # ros_print(self, (ur, vr))
-                            features = np.array(new_features)
-                            # ros_print(self, features)
-                            kmeans = KMeans(
-                                init="random",
-                                n_clusters=k,
-                                n_init=10,
-                                max_iter=50,
-                                random_state=42
-                            )
-
-                            kmeans.fit(features)
-                            centers = kmeans.cluster_centers_.astype(int)
-                            for center in centers:
-                                cy, cx = center
-                                cv2.circle(frame, (cx, cy), 8, self.COLOR[puck], 2)
-                                cv2.circle(frame, (cx, cy), 2, self.COLOR[puck], -1)
 
                     if not np.isclose(expected_area / area, 1.0, atol=0.65):
                         continue
@@ -221,13 +183,13 @@ class DetectorNode(Node):
                     # Draw the circle (yellow) and centroid (red) on the
                     # original image.
                     cx, cy = x + (w)//2, y + (h)//2
-                    if not (puck == TEN and k > 1):
-                        cv2.ellipse(frame, (cx, cy), (w//2, h//2), 0, 0, 360, self.COLOR[puck],  2)
-                        cv2.circle(frame, (cx, cy), 2, self.COLOR[puck], -1)
+                    # if not (puck == TEN and k > 1):
+                    cv2.ellipse(frame, (cx, cy), (w//2, h//2), 0, 0, 360, self.COLOR[puck],  2)
+                    cv2.circle(frame, (cx, cy), 2, self.COLOR[puck], -1)
 
                     xyCenter = self.pixelToWorld(frame, cx, cy, self.x0, self.y0)
                     if xyCenter is None:
-                        ros_print(self, 'globalization failed')
+                        # ros_print(self, 'globalization failed')
                         continue
                     (xc, yc) = xyCenter
                     pose = Pose()
@@ -235,7 +197,6 @@ class DetectorNode(Node):
                     pose.position.y = float(yc)
                     pose.orientation.x = float(self.IDS[puck])
                     poses.append(pose)
-                    # ros_print(self, f'{xc}, {yc}')
                 
                 
                 
@@ -246,7 +207,7 @@ class DetectorNode(Node):
 
 
     # Pixel Conversion
-    def pixelToWorld(self, image, u, v, x0, y0, annotateImage=True):
+    def pixelToWorld(self, image, u, v, x0, y0, annotateImage=False):
         '''
         Convert the (u,v) pixel position into (x,y) world coordinates
         Inputs:
@@ -266,7 +227,7 @@ class DetectorNode(Node):
         # Detect the Aruco markers (using the 4X4 dictionary).
         markerCorners, markerIds, _ = cv2.aruco.detectMarkers(
             image, cv2.aruco.getPredefinedDictionary(cv2.aruco.DICT_4X4_50))
-        if annotateImage:
+        if True:
             cv2.aruco.drawDetectedMarkers(image, markerCorners, markerIds)
 
         # Abort if not all markers are detected.
