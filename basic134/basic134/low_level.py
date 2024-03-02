@@ -16,8 +16,8 @@ from utils.pyutils import *
 from rclpy.node         import Node
 from sensor_msgs.msg    import JointState
 from visualization_msgs.msg import Marker
-from geometry_msgs.msg import Pose, Point
-from std_msgs.msg import Float32, Bool
+from geometry_msgs.msg import Pose, PointStamped
+from std_msgs.msg import Float32, Bool, Header
 
 #
 #   Definitions
@@ -118,8 +118,10 @@ class DemoNode(Node):
         self.cmdmsg = JointState()
         self.cmdpub = self.create_publisher(JointState, '/joint_commands', 10)
 
-        self.ready = self.create_publisher(Bool, '/' + name + '/ready', 10)
-        self.armed_pub = self.create_publisher(Bool, '/' + name + '/armed', 10)
+        # self.ready = self.create_publisher(Bool, '/' + name + '/ready', 10)
+        # self.armed_pub = self.create_publisher(Bool, '/' + name + '/armed', 10)
+        self.ready_armed_pub = self.create_publisher(PointStamped, 'low_level/ready_armed', 10)
+        self.goal_received_pub = self.create_publisher(Header, 'low_level/goal_received', 10)
         self.armed = False
 
         while not self.count_subscribers('/joint_commands'):
@@ -185,7 +187,7 @@ class DemoNode(Node):
            and not gripping:
             return
         self.armed = False
-        ros_print(self, 'RE_SPLINE')
+        # ros_print(self, 'RE_SPLINE')
         v_last, a_last = 0,0
         if self.mode == Mode.TASK:
             _, v_last, a_last = spline5(self.t - self.t0, self.tmove, self.TS['p0'].x.flatten(), self.TS['goal'].x.flatten(), self.TS['v0'],0, self.TS['a0'], 0)
@@ -204,9 +206,14 @@ class DemoNode(Node):
             self.t0 = self.t
             self.grip_0 = self.grip_act
             self.tmove = splinetime(self.TS['p0'].x, self.TS['goal'].x, v0=v_last, vf=0) + int(gripping) + 1
+            # ros_print(self, f'GRIP TMOVE: {self.tmove}')
             self.s_last = 0
             self.TS['v0'] = v_last
             self.TS['a0'] = a_last
+
+            h_msg = Header()
+            h_msg.stamp = self.get_clock().now().to_msg()
+            self.goal_received_pub.publish(h_msg)
     
     # Save the actual position.
     def cb_states(self, msg: JointState):
@@ -328,6 +335,7 @@ class DemoNode(Node):
             # setup splinetime
 
         elif self.mode == Mode.TASK and self.t - self.t0 > self.tmove:
+            ros_print(self, 'MOVE ON TO NEXT MINI MODE')
             self.lastmode = self.mode
             self.armed = True
             self.mode = Mode.STILL
@@ -338,13 +346,19 @@ class DemoNode(Node):
         self.cmdmsg.velocity = list(qdot)
         self.cmdmsg.effort = list(qeff)
         self.cmdpub.publish(self.cmdmsg)
-        boolmsg = Bool()
-        boolmsg.data = ready
-        self.ready.publish(boolmsg)
+        # boolmsg = Bool()
+        # boolmsg.data = ready
+        # self.ready.publish(boolmsg)
         
-        boolmsg = Bool()
-        boolmsg.data = self.armed
-        self.armed_pub.publish(boolmsg)
+        # boolmsg = Bool()
+        # boolmsg.data = self.armed
+        # self.armed_pub.publish(boolmsg)
+        # ros_print(self, self.armed)
+        p_msg = PointStamped()
+        p_msg.header.stamp = self.get_clock().now().to_msg()
+        p_msg.point.x = float(ready)
+        p_msg.point.y = float(self.armed)
+        self.ready_armed_pub.publish(p_msg)
 
 
 
