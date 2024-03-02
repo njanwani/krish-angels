@@ -203,7 +203,7 @@ class DemoNode(Node):
             self.mode = Mode.TASK
             self.t0 = self.t
             self.grip_0 = self.grip_act
-            self.tmove = splinetime(self.TS['p0'].x, self.TS['goal'].x, v0=v_last, vf=0) + int(gripping) + 1
+            self.tmove = max(splinetime(self.TS['p0'].x, self.TS['goal'].x, v0=v_last, vf=0), int(gripping))
             self.s_last = 0
             self.TS['v0'] = v_last
             self.TS['a0'] = a_last

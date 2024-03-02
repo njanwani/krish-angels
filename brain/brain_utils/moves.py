@@ -18,9 +18,10 @@ class Grab:
         GRAB = 2
         STOP = 3
 
-    def __init__(self, pos):
+    def __init__(self, pos, angle=None):
         self.mode = Grab.Mode.START
         self.pos = np.array(pos)
+        self.angle = angle
         self.done = False
 
     def step(self, t, ready, armed):
@@ -32,7 +33,9 @@ class Grab:
         elif self.mode == Grab.Mode.TO_OBJ:
             goal = [None, None]
             goal[0] = self.pos
-            goal[1] = 0 #np.arctan2(self.pos[1], self.pos[0])
+            if self.angle is None:
+                self.angle = np.arctan2(self.pos[1], self.pos[0])
+            goal[1] = self.angle
             grip = False
         elif self.mode == Grab.Mode.GRAB:
             grip = True
@@ -62,12 +65,12 @@ class Drop:
         DROP = 2
         STOP = 3
 
-    def __init__(self, pos, droppos=None):
+    def __init__(self, pos, angle=None):
         self.mode = Drop.Mode.START
         self.pos = np.array(pos)
         self.done = False
         self.t0 = None
-        self.droppos = droppos
+        self.angle = angle
 
     def step(self, t, ready, armed):
         goal = None
@@ -78,14 +81,12 @@ class Drop:
         elif self.mode == Drop.Mode.TO_POS:
             goal = [None, None]
             goal[0] = self.pos
-            goal[1] = np.arctan2(self.pos[1], self.pos[0])
+            if self.angle is None:
+                self.angle = np.arctan2(self.pos[1], self.pos[0])
+            goal[1] = self.angle
             grip = True
         elif self.mode == Drop.Mode.DROP:
             grip = False
-            # if not (self.droppos is None):
-            #     goal = [None, None]
-            #     goal[0] = self.droppos
-            #     goal[1] = np.arctan2(self.droppos[1], self.droppos[0])
         elif self.mode == Drop.Mode.STOP:
             pass
         else:

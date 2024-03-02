@@ -94,5 +94,5 @@ def splinetime(p0, pf, v0, vf, vmax=0.8, amax=0.08, cartesian=True):
         if cartesian:
             return max(np.linalg.norm(p0 - pf) * 4, 0.5)
         
-        m = max(3.5 * (np.abs(pf - p0) / vmax + np.abs(v0) / amax + np.abs(vf) / amax))
-        return max(m, 1.0)
+        m = max(1.5 * (np.abs(pf - p0) / vmax + np.abs(v0) / amax + np.abs(vf) / amax))
+        return max(m, 0.5)

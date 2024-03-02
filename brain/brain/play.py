@@ -31,13 +31,23 @@ TEN = 0
 TWENTY = 1
 QUEEN = 2
 STRIKER = 3
+ALL = 4
 
 EE_HEIGHT = 0.191 #0.193
-BOARD_HEIGHT = 0.07
+BOARD_HEIGHT = 0 #0.07
+GRIPPER_WIDTH = 0.01
+PUCK_RADIUS = 0.015
 
 endgoalx = 0.05 #round(random.uniform(-0.2, 0.2), 2)
 endgoal = np.array([0.5, endgoalx, EE_HEIGHT + BOARD_HEIGHT])
 outgoal = np.array([0.14, -0.2, 0])
+
+class Puck:
+
+    def __init__(self, x, angle, denom):
+        self.x = x
+        self.angle = angle
+        self.denom = denom 
 #
 #  Detector Node Class
 #
@@ -96,11 +106,42 @@ class BrainNode(Node):
         self.pucks[TWENTY] = []
         self.pucks[QUEEN] = []
         self.pucks[STRIKER] = []
+        self.pucks[ALL] = []
         while self.updating_pucks:
             pass
         self.updating_pucks = True
         for pose in self.puckarray:
-            self.pucks[pose.orientation.x].append(np.array([pose.position.x, pose.position.y, EE_HEIGHT + BOARD_HEIGHT]))
+            p = Puck(x=np.array([pose.position.x, pose.position.y, EE_HEIGHT + BOARD_HEIGHT]), angle=None, denom=pose.orientation.x)
+            self.pucks[pose.orientation.x].append(p)
+            self.pucks[ALL].append(p)
+
+
+        for puck in self.pucks[ALL]:
+            if puck.denom != STRIKER:
+                    continue
+            minangle = None
+            for angle in np.linspace(-np.pi, np.pi, num=25):
+                minr = np.inf
+                for second in self.pucks[ALL]:
+                    if puck == second:
+                        continue
+
+                    h = second.x - puck.x
+                    h = h[:2]
+                    g = np.array([np.sin(angle), np.cos(angle)])
+                    theta = np.arccos(h @ g / (np.linalg.norm(h) * np.linalg.norm(g)))
+                    r = np.linalg.norm(h) * np.sin(theta)
+                    if r < minr:
+                        minr = r
+                    
+                if minr > PUCK_RADIUS + GRIPPER_WIDTH / 2:
+                    ros_print(self, f'{angle} and {minr}')
+                    if minangle is None or abs(angle) < abs(minangle):
+                        minangle = angle                    
+            
+            ros_print(self, f'found angle {minangle}')
+            puck.angle = minangle
+
         self.updating_pucks = False
 
     def ready_cb(self, msg: Bool):
@@ -110,6 +151,7 @@ class BrainNode(Node):
     def armed_cb(self, msg: Bool):
         self.armed = msg.data
         self.armed_update = True
+
 
     def work(self):
         self.t = time.time()
@@ -165,17 +207,8 @@ class BrainNode(Node):
             idx = np.random.choice(np.arange(len(self.pucks[STRIKER])))
             self.focus = self.pucks[STRIKER][idx]
             
-        if self.moves == [] and not (self.focus is None):
-            # grab striker
-            # move out of the way to see all possible pucks to hit
-            # update pucks
-            # choose best puck shoot at 
-            # move to viable user player area, choose angle relative to the chosen puck
-            # drop striker to that pos
-            # strike
-            # wait
-            
-            self.moves.append(Grab(self.focus))
+        if self.moves == [] and not (self.focus is None):            
+            self.moves.append(Grab(self.focus.x, angle=self.focus.angle))
             # self.moves.append(Move(pos=outgoal + np.array([0,0, EE_HEIGHT + BOARD_HEIGHT + 0.05]), angle=0))
             # self.update_pucks()
             # self.moves.append(Wait(3.0))
@@ -183,9 +216,9 @@ class BrainNode(Node):
 
             # change ang to open in a way out of others
             # self.moves.append(Move(pos=endgoal + np.array([0,0,0.05]), angle=0))
-            self.moves.append(Drop(pos=endgoal, droppos=endgoal + np.array([0.0, 0.0, 0.1 + EE_HEIGHT + BOARD_HEIGHT])))
+            self.moves.append(Drop(pos=endgoal))
             randpuck = random.choice(self.pucks[TEN])
-            angle = -np.arctan2(randpuck[1]-endgoal[1], randpuck[0]-endgoal[0])
+            angle = -np.arctan2(randpuck.x[1]-endgoal[1], randpuck.x[0]-endgoal[0])
             self.moves.append(Strike(pos=endgoal, angle=angle))
             ros_print(self, f'angle dude {angle}')
             self.moves.append(Wait(3.0))
