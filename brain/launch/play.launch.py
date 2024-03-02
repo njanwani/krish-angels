@@ -118,7 +118,7 @@ def generate_launch_description():
         output     = 'screen')
 
     play = Node(
-        name       = 'touch', 
+        name       = 'play', 
         package    = 'brain',
         executable = 'play',
         output     = 'screen')

@@ -2,6 +2,7 @@
 import cv2
 import numpy as np
 from sklearn.cluster import KMeans
+import random
 
 # ROS Imports
 import rclpy
@@ -31,9 +32,12 @@ TWENTY = 1
 QUEEN = 2
 STRIKER = 3
 
-EE_HEIGHT = 0.193 #0.141
+EE_HEIGHT = 0.191 #0.193
+BOARD_HEIGHT = 0.07
 
-endgoal = np.array([0.5, -0.2, EE_HEIGHT + BOARD_HEIGHT])
+endgoalx = 0.05 #round(random.uniform(-0.2, 0.2), 2)
+endgoal = np.array([0.5, endgoalx, EE_HEIGHT + BOARD_HEIGHT])
+outgoal = np.array([0.14, -0.2, 0])
 #
 #  Detector Node Class
 #
@@ -55,9 +59,9 @@ class BrainNode(Node):
 
         self.focus = None
         self.ready = False
-        self.ready_update = 0
+        self.ready_update = False
         self.armed = False
-        self.armed_update = 0
+        self.armed_update = False
         self.moves = []
 
         self.puck_sub = self.create_subscription(PoseArray, '/puckdetector/pucks', self.puck_cb, 10)
@@ -74,8 +78,9 @@ class BrainNode(Node):
         # Create a timer to keep calculating/sending commands.
         rate       = RATE
         self.timer = self.create_timer(1 / rate, self.think)
-        rate       = 20.0
+        rate       = 10.0
         self.timer = self.create_timer(1 / rate, self.work)
+        ros_print(self, 'STARTED PLAY')
 
     def puck_cb(self, msg: PoseArray):
         while self.updating_pucks:
@@ -112,9 +117,10 @@ class BrainNode(Node):
             return
         
         if not self.armed_update or not self.ready_update:
+            # ros_print(self, 'LATE UPDATE')
             time.sleep(0.2)
             return
-        ros_print(self, f'{type(self.moves[0])} and {self.armed} and {self.ready} and {self.moves[0].mode}')
+        # ros_print(self, f'{type(self.moves[0])} and {self.armed} and {self.ready} and {self.moves[0].mode}')
         goal, grip, strike = self.moves[0].step(self.t, self.ready, self.armed)
         self.armed_update = False
         self.ready_update = False
@@ -144,28 +150,47 @@ class BrainNode(Node):
         if self.moves[0].done:
             ros_print(self, 'MOVING ON')
             self.moves.pop(0)
+            if self.moves == []:
+                self.focus = None
+                self.update_pucks()
 
 
     def think(self):
         # ros_print(self, self.mode)
-        if self.pucks[TEN] == [] and self.puckarray != []:
-            ros_print(self, 'trying to update')
+        if self.pucks[STRIKER] == [] and self.puckarray != []:
+            # ros_print(self, 'trying to update')
             self.update_pucks()
 
-        if self.pucks[TEN] != [] and self.focus is None:
-            idx = np.random.choice(np.arange(len(self.pucks[TEN])))
-            self.focus = self.pucks[TEN][idx]
+        if self.pucks[STRIKER] != [] and self.focus is None:
+            idx = np.random.choice(np.arange(len(self.pucks[STRIKER])))
+            self.focus = self.pucks[STRIKER][idx]
             
         if self.moves == [] and not (self.focus is None):
+            # grab striker
+            # move out of the way to see all possible pucks to hit
+            # update pucks
+            # choose best puck shoot at 
+            # move to viable user player area, choose angle relative to the chosen puck
+            # drop striker to that pos
+            # strike
+            # wait
+            
             self.moves.append(Grab(self.focus))
-            self.moves.append(Wait(3.0))
-            self.moves.append(Move(pos=np.mean(np.vstack((self.focus, endgoal)), axis=0) + np.array([0,0, EE_HEIGHT + BOARD_HEIGHT + 0.05]), angle=0))
-            self.moves.append(Wait(3.0))
-            self.moves.append(Drop(pos=endgoal))
-            self.moves.append(Wait(3.0))
-            self.moves.append(Strike(pos=endgoal, angle=0))
-            self.moves.append(Wait(3.0))
+            # self.moves.append(Move(pos=outgoal + np.array([0,0, EE_HEIGHT + BOARD_HEIGHT + 0.05]), angle=0))
+            # self.update_pucks()
+            # self.moves.append(Wait(3.0))
+            self.moves.append(Move(pos=np.mean(np.vstack((outgoal, endgoal)), axis=0) + np.array([0,0, EE_HEIGHT + BOARD_HEIGHT + 0.05]), angle=0))
 
+            # change ang to open in a way out of others
+            # self.moves.append(Move(pos=endgoal + np.array([0,0,0.05]), angle=0))
+            self.moves.append(Drop(pos=endgoal, droppos=endgoal + np.array([0.0, 0.0, 0.1 + EE_HEIGHT + BOARD_HEIGHT])))
+            randpuck = random.choice(self.pucks[TEN])
+            angle = -np.arctan2(randpuck[1]-endgoal[1], randpuck[0]-endgoal[0])
+            self.moves.append(Strike(pos=endgoal, angle=angle))
+            ros_print(self, f'angle dude {angle}')
+            self.moves.append(Wait(3.0))
+            self.moves.append(Move(pos=outgoal + np.array([0,0, EE_HEIGHT + BOARD_HEIGHT + 0.05]), angle=0))
+            # refind striker            
 
     # Shutdown
     def shutdown(self):

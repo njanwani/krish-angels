@@ -198,11 +198,15 @@ class KinematicChain():
     def weighted_inv(J, gamma):
         return J.T @ np.linalg.pinv(J @ J.T + gamma**2 * np.identity(J.shape[0]))
     
-    def ikin(self, dt, qlast, pdlast, vd, wd, Rdlast, q_secondary=np.zeros(3), lam_secondary=1, gamma=100):
+    def ikin(self, dt, qlast, pdlast, vd, wd, Rdlast, tip_angle=0, q_secondary=np.zeros(3), lam_secondary=1, gamma=100):
         
         # Compute the old forward kinematics.
         (p, R, Jv, Jw) = self.fkin(qlast)
-        # ros_print(self.node, f'p: {p}\n\n')
+        # ros_print(self.node, f'{qlast}\n\n\n\n\n\n')
+        q_goal = qlast.copy()
+        q_goal[-1] = 0
+        q_secondary = 20.0 * (q_goal - qlast)
+        
         # ros_print(self.node, f'R: {R}\n\n')
         # ros_print(self.node, f'Jv: {Jv}\n\n')
         # ros_print(self.node, f'Jw: {Jw}\n\n')
@@ -221,8 +225,10 @@ class KinematicChain():
         _, S, _ = np.linalg.svd(np.linalg.pinv(J))
         gamma = 0.1 * np.log(1 / np.min(np.abs(S)))
         # ros_print(self.node, gamma)
-        qdot  = np.linalg.pinv(J) @ xrdot
+        qdot  = np.linalg.pinv(J) @ xrdot +0* (np.linalg.pinv(J) @ J) @ q_secondary.reshape((5,1))
+        # ros_print(self.node, f'p: {(1 - np.linalg.pinv(J) @ J)}\n\n')
         # qdot = KinematicChain.weighted_inv(J, gamma) @ xrdot
+        qdot[-1] = 1 * (tip_angle - qlast[-1])
         q = np.array(qlast).reshape((5,1)) + dt * qdot
         sing = False
         if gamma > 1:

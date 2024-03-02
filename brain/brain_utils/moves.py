@@ -32,7 +32,7 @@ class Grab:
         elif self.mode == Grab.Mode.TO_OBJ:
             goal = [None, None]
             goal[0] = self.pos
-            goal[1] = np.arctan2(self.pos[1], self.pos[0])
+            goal[1] = 0 #np.arctan2(self.pos[1], self.pos[0])
             grip = False
         elif self.mode == Grab.Mode.GRAB:
             grip = True
@@ -43,9 +43,11 @@ class Grab:
 
         if self.mode == Grab.Mode.START and ready:
             self.mode = Grab.Mode.TO_OBJ
-        elif self.mode == Grab.Mode.TO_OBJ and armed:
+            self.t0 = t
+        elif self.mode == Grab.Mode.TO_OBJ and armed and t - self.t0 > 1.0:
             self.mode = Grab.Mode.GRAB
-        elif self.mode == Grab.Mode.GRAB and armed:
+            self.t0 = t
+        elif self.mode == Grab.Mode.GRAB and armed and t - self.t0 > 1.0:
             self.done = True
 
         return goal, grip, strike
@@ -60,11 +62,12 @@ class Drop:
         DROP = 2
         STOP = 3
 
-    def __init__(self, pos):
+    def __init__(self, pos, droppos=None):
         self.mode = Drop.Mode.START
         self.pos = np.array(pos)
         self.done = False
         self.t0 = None
+        self.droppos = droppos
 
     def step(self, t, ready, armed):
         goal = None
@@ -79,6 +82,10 @@ class Drop:
             grip = True
         elif self.mode == Drop.Mode.DROP:
             grip = False
+            # if not (self.droppos is None):
+            #     goal = [None, None]
+            #     goal[0] = self.droppos
+            #     goal[1] = np.arctan2(self.droppos[1], self.droppos[0])
         elif self.mode == Drop.Mode.STOP:
             pass
         else:
@@ -87,10 +94,10 @@ class Drop:
         if self.mode == Drop.Mode.START and ready:
             self.mode = Drop.Mode.TO_POS
             self.t0 = t
-        elif self.mode == Drop.Mode.TO_POS and armed and t - self.t0 > 0.5:
+        elif self.mode == Drop.Mode.TO_POS and armed and t - self.t0 > 1.0:
             self.mode = Drop.Mode.DROP
             self.t0 = t
-        elif self.mode == Drop.Mode.DROP and armed and t - self.t0 > 0.5:
+        elif self.mode == Drop.Mode.DROP and armed and t - self.t0 > 1.0:
             self.done = True
 
         return goal, grip, strike
@@ -170,7 +177,8 @@ class Move:
 
         if self.mode == Move.Mode.START and ready:
             self.mode = Move.Mode.TO_POS
-        elif self.mode == Move.Mode.TO_POS and armed:
+            self.t0 = t
+        elif self.mode == Move.Mode.TO_POS and armed and t - self.t0 > 1.0:
             self.mode = Move.Mode.STOP
             self.done = True
 
@@ -209,7 +217,8 @@ class Wait:
             self.t0 = t
         elif self.mode == Wait.Mode.WAIT and t - self.t0 > self.T:
             self.mode = Wait.Mode.STOP
-        elif self.mode == Wait.Mode.STOP:
+            self.t0 = t
+        elif self.mode == Wait.Mode.STOP and t - self.t0 > 1.0:
             self.done = True
 
         return goal, grip, strike
