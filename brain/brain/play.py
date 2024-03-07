@@ -33,9 +33,9 @@ QUEEN = 2
 STRIKER = 3
 ALL = 4
 
-EE_HEIGHT = 0.191 #0.193
-BOARD_HEIGHT = 0 #0.07
-GRIPPER_WIDTH = 0.01
+EE_HEIGHT = 0.181 #0.193
+BOARD_HEIGHT = 0.09 #0.07
+GRIPPER_WIDTH = 0.06
 PUCK_RADIUS = 0.015
 
 endgoalx = 0.05 #round(random.uniform(-0.2, 0.2), 2)
@@ -118,7 +118,8 @@ class BrainNode(Node):
 
         for puck in self.pucks[ALL]:
             if puck.denom != STRIKER:
-                    continue
+                continue
+            maxr = -np.inf
             minangle = None
             for angle in np.linspace(-np.pi, np.pi, num=25):
                 minr = np.inf
@@ -126,21 +127,30 @@ class BrainNode(Node):
                     if puck == second:
                         continue
 
-                    h = second.x - puck.x
+                    h = second.x - puck.x                    
                     h = h[:2]
-                    g = np.array([np.sin(angle), np.cos(angle)])
-                    theta = np.arccos(h @ g / (np.linalg.norm(h) * np.linalg.norm(g)))
-                    r = np.linalg.norm(h) * np.sin(theta)
+                    hnorm = np.linalg.norm(h)
+
+                    # if hnorm > GRIPPER_WIDTH / 2:
+                    #     continue
+
+                    g = np.array([np.sin(angle), -np.cos(angle)])
+                    theta = np.arccos(h @ g / (hnorm * np.linalg.norm(g)))
+                    r = hnorm * np.sin(theta)
                     if r < minr:
                         minr = r
-                    
-                if minr > PUCK_RADIUS + GRIPPER_WIDTH / 2:
-                    ros_print(self, f'{angle} and {minr}')
-                    if minangle is None or abs(angle) < abs(minangle):
-                        minangle = angle                    
+                ros_print(self, f'{minr} and {angle}')
+                if minr > maxr:
+                    # minangle.append(angle)
+                    maxr = minr
+                    minangle = angle                 
             
-            ros_print(self, f'found angle {minangle}')
-            puck.angle = minangle
+            # if minangle == []:
+            #     puck.angle = None
+            # else:
+            #     puck.angle = min(minangle, key=abs)
+            puck.angle = -np.pi # minangle
+            ros_print(self, f'found angle {puck.angle}')
 
         self.updating_pucks = False
 
@@ -218,7 +228,7 @@ class BrainNode(Node):
             # self.moves.append(Move(pos=endgoal + np.array([0,0,0.05]), angle=0))
             self.moves.append(Drop(pos=endgoal))
             randpuck = random.choice(self.pucks[TEN])
-            angle = -np.arctan2(randpuck.x[1]-endgoal[1], randpuck.x[0]-endgoal[0])
+            angle = np.arctan2(randpuck.x[1]-endgoal[1], randpuck.x[0]-endgoal[0])
             self.moves.append(Strike(pos=endgoal, angle=angle))
             ros_print(self, f'angle dude {angle}')
             self.moves.append(Wait(3.0))

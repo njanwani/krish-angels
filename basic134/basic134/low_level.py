@@ -33,10 +33,13 @@ class Mode(Enum):
     STILL = 5
 
 class RobotPose:
-    def __init__(self, x, R, theta=0):
+    def __init__(self, x, theta):
         self.x = x
-        self.R = R
         self.theta = theta
+
+    @property
+    def R(self):
+        return Reye() @ Roty(0) @ Rotz(self.theta)
 
 class Filter:
     def __init__(self, T, x0):
@@ -81,7 +84,8 @@ class DemoNode(Node):
         self.position0 = self.position0[:-1]
         self.queue = []
 
-        self.t = 0
+        self.t = time.time()
+        self.tlast = None
         self.t0 = self.t
         self.tmove = 2
         self.mode = Mode.START
@@ -94,8 +98,8 @@ class DemoNode(Node):
         self.JS['q_start'] = np.array([np.pi / 2, -np.pi / 2, -np.pi / 2, 0.0, 0.0])
 
         self.TS = {}
-        self.TS['p0'] = RobotPose(*(self.chain.fkin(self.position0)[:2]))
-        self.TS['goal'] = RobotPose(*(self.chain.fkin(self.JS['q_start'])[:2]))
+        self.TS['p0'] = RobotPose(self.chain.fkin(self.position0)[0], self.position0[0] - self.position0[-1])
+        self.TS['goal'] = RobotPose(self.chain.fkin(self.JS['q_start'])[0], self.JS['q_start'][0] - self.JS['q_start'][-1])
         self.TS['v0'] = 0
         self.TS['a0'] = 0
 
@@ -168,8 +172,9 @@ class DemoNode(Node):
                                                      af=0)
 
     def recvpt(self, msg: Pose, gripping = False):
-        msg.position.y = msg.position.y + 0.026 - 0.005 * msg.position.y
-        msg.position.x = msg.position.x - 0.002 - 0.03 * msg.position.y
+        msg.position.y = msg.position.y #+ 0.026 - 0.005 * msg.position.y
+        msg.position.x = msg.position.x #- 0.002 - 0.03 * msg.position.y
+        msg.position.z = msg.position.z #+ 0.02 * msg.position.x
         # ros_print(self, msg.position.y)
         if np.all(self.TS['goal'].x == self.TS['p0'].x) and np.all(self.TS['goal'].R == self.TS['p0'].R):
             return
@@ -194,9 +199,8 @@ class DemoNode(Node):
         self.TS['goal'].x = np.array([msg.position.x,
                                       msg.position.y,
                                       msg.position.z])
-        self.TS['goal'].R = R
         self.TS['goal'].theta = msg.orientation.z
-        self.TS['p0'] = RobotPose(*(self.chain.fkin(self.JS['q_last'])[:2]))
+        self.TS['p0'] = RobotPose(self.chain.fkin(self.JS['q_last'])[0], self.JS['q_last'][0] - self.JS['q_last'][-1])
 
 
         if self.mode in [Mode.STILL, Mode.TASK]:
@@ -217,9 +221,10 @@ class DemoNode(Node):
         self.effort.update(msg.effort[:-1])
     
     def gravity(self, q):
-        t_wrist = 0.5 * np.sin(q[3] - q[2] + q[1])
+        ros_print(self, q[3] - q[2] + q[1])
+        t_wrist = 0.9 * np.sin(q[3] - q[2] + q[1]) + 0.1 * np.cos(q[-1])
         t_elbow = 7.5 * np.cos(q[1] - q[2]) - t_wrist #5.65 
-        t_shoulder = -t_elbow - 8.9 * np.cos(q[1])
+        t_shoulder = -t_elbow - 9.0 * np.cos(q[1])
         return t_shoulder, t_elbow, t_wrist
 
     # Shutdown
@@ -247,13 +252,14 @@ class DemoNode(Node):
 
     def compute_ts_spline(self, s, sdot):
         p, v, _ = spline5(self.t - self.t0, self.tmove, self.TS['p0'].x.flatten(), self.TS['goal'].x.flatten(), self.TS['v0'],0, self.TS['a0'], 0)
+        theta, thetadot, _ = spline5(self.t - self.t0, self.tmove, self.TS['p0'].theta, self.TS['goal'].theta, 0, 0, 0, 0)
         R = Rinter(self.TS['p0'].R, self.TS['goal'].R, s)
         w = winter(self.TS['p0'].R, self.TS['goal'].R, sdot)
         gq, gqdot, _ = spline5(self.t - self.t0, self.tmove, self.grip_0, self.grip_cmd, 0, 0, 0, 0)
 
         # ros_print(self, f'p {p}')
         
-        q, qdot, sing = self.chain.ikin(1 / RATE, self.JS['q_last'], p.reshape((3,1)), v.reshape((3,1)), w, R, tip_angle=self.TS['goal'].theta)
+        q, qdot, sing = self.chain.ikin(1 / RATE, self.JS['q_last'], p.reshape((3,1)), v.reshape((3,1)), w, R, tip_angle=theta, tip_dot=thetadot)
         q, qdot = np.array(list(q) + [gq]), np.array(list(qdot) + [gqdot])
         if sing:
             mode = Mode.JOINT
@@ -265,7 +271,11 @@ class DemoNode(Node):
     # Send a command - called repeatedly by the timer.
     def sendcmd(self):
         # ros_print(self, self.mode)
-        self.t += 1 / RATE
+        if self.tlast is None:
+            self.tlast = time.time() - 1 / RATE
+        dt = time.time() - self.tlast
+        self.t += dt
+        self.tlast = time.time()
         self.cmdmsg.header.stamp = self.get_clock().now().to_msg()
         self.cmdmsg.name         = ['base', 'shoulder', 'elbow', 'wrist', 'end', 'grip']
         nan = float("nan")
@@ -297,7 +307,7 @@ class DemoNode(Node):
             q, qdot, _ = spline5(self.t - self.t0, self.tmove, self.JS['q0'], self.JS['q_start'], 0, 0, 0, 0)
             q, qdot = np.array(list(q) + [self.grip_cmd]), np.array(list(qdot) + [self.grip_cmd])
             t_shoulder, t_elbow, t_wrist = self.gravity(q)
-            qeff = np.array([0.0, t_shoulder, t_elbow, t_wrist, 0.0, 0.0])
+            qeff = 1 * np.array([0.0, t_shoulder, t_elbow, t_wrist, 0.0, 0.0])
 
         elif self.mode == Mode.STILL:
             q, qdot = self.JS['q_last'], np.zeros(5)
@@ -322,7 +332,7 @@ class DemoNode(Node):
             self.lastmode = self.mode
             self.mode = Mode.STILL
             self.t0 = self.t
-            self.TS['p0'] = RobotPose(*(self.chain.fkin(self.JS['q_last'])[:2]))
+            self.TS['p0'] = RobotPose(self.chain.fkin(self.JS['q_last'])[0], self.JS['q_last'][0] - self.JS['q_last'][-1])
             self.tmove = splinetime(self.TS['p0'].x, self.TS['goal'].x, v0=0, vf=0)
             # ros_print(self, f"\n\n\n\n\n\n\nTMOVE: {self.tmove}\n\n\n\n\n\n\n")
             # setup splinetime

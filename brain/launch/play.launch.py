@@ -72,7 +72,7 @@ def generate_launch_description():
         parameters = [{'family':   'robotlab'},
                       {'motors':   ['4.6',  '4.7',  '4.4', '4.3', '4.2', '9.3']},
                       {'joints':   ['base', 'shoulder', 'elbow', 'wrist', 'end', 'grip']},
-                      {'testmode' : 'off'}],
+                      {'testmode' : 'track'}],
         on_exit    = Shutdown())
     
     end_effector = Node(
@@ -102,6 +102,14 @@ def generate_launch_description():
         executable = 'puckdetector',
         output     = 'screen',
         remappings = [('/image_raw', '/usb_cam/image_raw')])
+    
+    node_boarddetector = Node(
+        name       = 'boarddetector',
+        package    = 'detectors',
+        executable = 'boarddetector',
+        output     = 'screen' ,
+        remappings = [('/image_raw', '/usb_cam/image_raw')]
+    )
     
     node_webserver = Node(
         name       = 'webserver', 
@@ -136,6 +144,7 @@ def generate_launch_description():
         low_level,
         node_usbcam,
         node_balldetector,
+        #node_boarddetector,
         # node_webserver,
         play,
         end_effector,

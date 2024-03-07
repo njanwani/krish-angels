@@ -32,7 +32,8 @@ setup(
             'depthincenter = detectors.depthincenter:main',
             'detectaruco   = detectors.detectaruco:main',
             'writearuco    = detectors.writearuco:main',
-            'webserver    = detectors.webserver:main'
+            'webserver    = detectors.webserver:main',
+            'boarddetector    = detectors.boarddetector:main'
         ],
     },
 )

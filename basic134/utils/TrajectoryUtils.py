@@ -92,7 +92,7 @@ def spline5(t, T, p0, pf, v0, vf, a0, af):
 
 def splinetime(p0, pf, v0, vf, vmax=0.8, amax=0.08, cartesian=True):
         if cartesian:
-            return max(np.linalg.norm(p0 - pf) * 4, 0.5)
+            return max(np.linalg.norm(p0 - pf) * 6, 0.5)
         
-        m = max(1.5 * (np.abs(pf - p0) / vmax + np.abs(v0) / amax + np.abs(vf) / amax))
+        m = max(4.0 * (np.abs(pf - p0) / vmax + np.abs(v0) / amax + np.abs(vf) / amax))
         return max(m, 0.5)
