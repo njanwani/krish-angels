@@ -131,7 +131,6 @@ class DetectorNode(Node):
                     return
                 
                 x,y,w,h = cv2.boundingRect(contour)
-                
                 # k=0
                 # expected_area = radius**2 * np.pi
 
@@ -147,9 +146,11 @@ class DetectorNode(Node):
 
 
                 rect = cv2.minAreaRect(contour)
+
                 x = rect[0][0] 
                 box = cv2.boxPoints(rect) 
                 box = np.int0(box) 
+                self.get_logger().info(f'{[box]}')
                 frame = cv2.drawContours(frame, [box], 0, (0, 0, 255), 2) 
 
                 # xyCenter = self.pixelToWorld(frame, cx, cy, self.x0, self.y0)

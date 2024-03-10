@@ -38,6 +38,8 @@ QUEEN = 'Queen'
 STRIKER = 'Striker'
 BOARD = 'Board'
 
+STORAGE_LEN = 15
+
 #
 #  Detector Node Class
 #
@@ -59,13 +61,14 @@ class DetectorNode(Node):
         self.HSV_LIMITS[TEN] = np.array([[72, 93], [32, 151], [39, 156]])
         self.HSV_LIMITS[STRIKER] = np.array([[23, 35], [24, 114], [129, 255]])
         self.HSV_LIMITS[QUEEN] = np.array([[88, 117], [98, 255], [126, 199]])
-        # self.HSV_LIMITS[TWENTY] = np.array([[0, 9], [203, 241], [150, 255]])
+        self.HSV_LIMITS[TWENTY] = np.array([[11, 18], [83, 236], [119, 194]])
 
-        self.hsv_board = np.array([[10, 22], [99, 224], [130, 214]])
+        self.hsv_board = np.array([[80, 124], [17, 77], [0, 130]])
 
         # publishers
         self.pub = self.create_publisher(PoseArray, '/' + name + '/pucks', 3)
-        
+        self.board_pub = self.create_publisher(Pose, name + '/board', 3)
+
         self.IM_PUB = {}
         self.IM_PUB[RGB_TOPIC] = self.create_publisher(Image, name + RGB_TOPIC, 3)
         self.IM_PUB[TEN] = self.create_publisher(Image, name + '/binary_' + TEN, 3)
@@ -80,7 +83,7 @@ class DetectorNode(Node):
         self.BINARY_FILTER[TWENTY] = lambda b: cv2.dilate(cv2.erode(b, None, iterations=0), None, iterations=1)
         self.BINARY_FILTER[QUEEN] = lambda b: cv2.dilate(cv2.erode(b, None, iterations=0), None, iterations=1)
         self.BINARY_FILTER[STRIKER] = lambda b: cv2.dilate(cv2.erode(b, None, iterations=1), None, iterations=1)
-        self.BINARY_FILTER[BOARD] = lambda b: cv2.dilate(cv2.erode(b, None, iterations=2), None, iterations=1)
+        self.BINARY_FILTER[BOARD] = lambda b: cv2.dilate(cv2.erode(b, None, iterations=2), None, iterations=9)
         
         # annotation colors
         self.COLOR = {}
@@ -94,7 +97,11 @@ class DetectorNode(Node):
         self.IDS[TWENTY] = 1
         self.IDS[QUEEN] = 2
         self.IDS[STRIKER] = 3
-        
+
+        self.last_bins = []
+        for i in range(STORAGE_LEN):
+            self.last_bins.append(None)
+
         # Set up the OpenCV bridge.
         self.bridge = cv_bridge.CvBridge()
 
@@ -196,15 +203,58 @@ class DetectorNode(Node):
                     pose.position.x = float(xc)
                     pose.position.y = float(yc)
                     pose.orientation.x = float(self.IDS[puck])
-                    poses.append(pose)
-                
-                
+                    poses.append(pose)      
                 
         posearray_msg.poses = poses
 
         self.pub.publish(posearray_msg)
         self.IM_PUB[RGB_TOPIC].publish(self.bridge.cv2_to_imgmsg(frame, "rgb8"))
 
+        binary =  cv2.inRange(hsv, self.hsv_board[:,0], self.hsv_board[:,1])
+        binary = self.BINARY_FILTER[BOARD](binary)
+
+        # if needed, seed the storage queue with the first binary seen
+        for i in range(STORAGE_LEN):
+            if self.last_bins[i] is None:
+                self.last_bins[i] = binary
+        
+        # initialize the average for scope
+        avg_bin = cv2.addWeighted(binary, 1, binary, 0, 0.0)
+        # merge the last N binaries to get a more reliable board edge
+        for i in range(STORAGE_LEN):
+            avg_bin = cv2.addWeighted(avg_bin, 1, self.last_bins[STORAGE_LEN - i - 1], 1, 0.0)
+
+        (contours, hierarchy) = cv2.findContours(avg_bin, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
+        self.IM_PUB[BOARD].publish(self.bridge.cv2_to_imgmsg(avg_bin, "mono8"))
+
+        if len(contours) > 0:
+            #contour = max(contours, key=cv2.contourArea)
+            contours = list(contours)
+            contours.sort(reverse=True, key=cv2.contourArea)
+            contours = contours[:1] # select largest contour only --> the board
+            #area = cv2.contourArea(contour)
+            for contour in contours:
+                if cv2.contourArea(contour) < 0:
+                    return
+                
+                x,y,w,h = cv2.boundingRect(contour)
+                cx, cy = x + (w)//2, y + (h)//2
+
+                rect = cv2.minAreaRect(contour)
+
+                x = rect[0][0] 
+                box = cv2.boxPoints(rect) 
+                box = np.int0(box) 
+                self.get_logger().info(f'{[box]}')
+                frame = cv2.drawContours(frame, [box], 0, (0, 0, 255), 2) 
+        board_pose = Pose()
+        board_pose.position.x = rect[0][0]
+        board_pose.position.y = rect[0][1]
+        board_pose.position.z = rect[2]
+        self.board_pub.publish(board_pose)
+        self.IM_PUB[RGB_TOPIC].publish(self.bridge.cv2_to_imgmsg(frame, "rgb8"))
+        self.last_bins.append(binary)
+        self.last_bins = self.last_bins[1:]
 
     # Pixel Conversion
     def pixelToWorld(self, image, u, v, x0, y0, annotateImage=False):
