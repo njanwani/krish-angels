@@ -31,6 +31,12 @@ BOARD = 'Board'
 
 STORAGE_LEN = 15
 
+def ros_print(node, msg: str):
+    """
+    Easy print for ROS nodes
+    """
+    node.get_logger().info(str(msg))
+
 #
 #  Detector Node Class
 #
@@ -48,7 +54,7 @@ class DetectorNode(Node):
         super().__init__(name)
 
         # Thresholds in Hmin/max, Smin/max, Vmin/max
-        self.hsv_thresh = np.array([[80, 124], [17, 77], [0, 130]])
+        self.hsv_thresh = np.array([[96, 124], [18, 57], [33, 101]])
 
         # publishers
         self.im_pub = self.create_publisher(Image, name + '/binary/' + BOARD, 3)
@@ -58,6 +64,7 @@ class DetectorNode(Node):
         # eroding and dilating
         #self.filter = lambda b: cv2.erode(cv2.dilate(b, None, iterations=2), None, iterations=3)
         self.filter = lambda b: cv2.dilate(cv2.erode(cv2.dilate(b, None, iterations=2), None, iterations=9), None, iterations=7)
+        self.filter2 = lambda b: cv2.dilate(cv2.erode(b, None, iterations=1), None, iterations=2)
 
         self.last_bins = []
         for i in range(STORAGE_LEN):
@@ -103,23 +110,24 @@ class DetectorNode(Node):
         markerCorners, markerIds, _ = cv2.aruco.detectMarkers(frame, cv2.aruco.getPredefinedDictionary(cv2.aruco.DICT_4X4_50))
 
         binary = cv2.inRange(hsv, self.hsv_thresh[:,0], self.hsv_thresh[:,1])
-        binary = self.filter(binary)
+        # binary = self.filter(binary)
+        binary = self.filter2(binary)
 
         # if needed, seed the storage queue with the first binary seen
-        for i in range(STORAGE_LEN):
-            if self.last_bins[i] is None:
-                self.last_bins[i] = binary
+        # for i in range(STORAGE_LEN):
+        #     if self.last_bins[i] is None:
+        #         self.last_bins[i] = binary
         
-        # initialize the average for scope
-        avg_bin = cv2.addWeighted(binary, 1, binary, 0, 0.0)
-        # merge the last N binaries to get a more reliable board edge
-        for i in range(STORAGE_LEN):
-            avg_bin = cv2.addWeighted(avg_bin, 1, self.last_bins[STORAGE_LEN - i - 1], 1, 0.0)
+        # # initialize the average for scope
+        # avg_bin = cv2.addWeighted(binary, 1, binary, 0, 0.0)
+        # # merge the last N binaries to get a more reliable board edge
+        # for i in range(STORAGE_LEN):
+        #     avg_bin = cv2.addWeighted(avg_bin, 1, self.last_bins[STORAGE_LEN - i - 1], 1, 0.0)
 
         #(contours, hierarchy) = cv2.findContours(binary, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
-        (contours, hierarchy) = cv2.findContours(avg_bin, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
-        self.im_pub.publish(self.bridge.cv2_to_imgmsg(avg_bin, "mono8"))
-
+        (contours, hierarchy) = cv2.findContours(binary, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
+        self.im_pub.publish(self.bridge.cv2_to_imgmsg(binary, "mono8"))
+        accuracy = 0
         if len(contours) > 0:
             #contour = max(contours, key=cv2.contourArea)
             contours = list(contours)
@@ -129,48 +137,30 @@ class DetectorNode(Node):
             for contour in contours:
                 if cv2.contourArea(contour) < 0:
                     return
-                
-                x,y,w,h = cv2.boundingRect(contour)
-                
-                # k=0
-                # expected_area = radius**2 * np.pi
 
-                # if not np.isclose(expected_area / area, 1.0, atol=0.65):
-                #     return
-
-                # Draw the circle (yellow) and centroid (red) on the
-                # original image.
-                cx, cy = x + (w)//2, y + (h)//2
-                # if not (puck == TEN and k > 1):
-                # frame = cv2.rectangle(frame, (x, y), (x+w, y+h), self.red, 2) 
-                # cv2.drawContours(frame, [contour],0,(0,191,255),2)
 
 
                 rect = cv2.minAreaRect(contour)
-                x = rect[0][0] 
+                (x,y), (w,h), theta = rect
                 box = cv2.boxPoints(rect) 
                 box = np.int0(box) 
                 frame = cv2.drawContours(frame, [box], 0, (0, 0, 255), 2) 
 
-                # xyCenter = self.pixelToWorld(frame, cx, cy, self.x0, self.y0)
-                # if xyCenter is None:
-                #     # ros_print(self, 'globalization failed')
-                #     return
-                # (xc, yc) = xyCenter
-                # pose = Pose()
-                # pose.position.x = float(xc)
-                # pose.position.y = float(yc)
-                # pose.orientation.x = float(self.IDS[puck])
+                area = cv2.contourArea(contour)
+                area_calc = w*h
+                accuracy = area / area_calc
+                ros_print(self, accuracy)
                     
         #self.pub.publish(posearray_msg)
-        board_pose = Pose()
-        board_pose.position.x = rect[0][0]
-        board_pose.position.y = rect[0][1]
-        board_pose.position.z = rect[2]
-        self.board_pub.publish(board_pose)
-        self.im_raw_pub.publish(self.bridge.cv2_to_imgmsg(frame, "rgb8"))
-        self.last_bins.append(binary)
-        self.last_bins = self.last_bins[1:]
+        if accuracy > 0.95:
+            board_pose = Pose()
+            board_pose.position.x = rect[0][0]
+            board_pose.position.y = rect[0][1]
+            board_pose.position.z = rect[2]
+            self.board_pub.publish(board_pose)
+            self.im_raw_pub.publish(self.bridge.cv2_to_imgmsg(frame, "rgb8"))
+            self.last_bins.append(binary)
+            self.last_bins = self.last_bins[1:]
 
 
     # Pixel Conversion

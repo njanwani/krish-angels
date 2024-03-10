@@ -59,7 +59,7 @@ class DetectorNode(Node):
         self.HSV_LIMITS[TEN] = np.array([[72, 93], [32, 151], [39, 156]])
         self.HSV_LIMITS[STRIKER] = np.array([[23, 35], [24, 114], [129, 255]])
         self.HSV_LIMITS[QUEEN] = np.array([[88, 117], [98, 255], [126, 199]])
-        # self.HSV_LIMITS[TWENTY] = np.array([[0, 9], [203, 241], [150, 255]])
+        self.HSV_LIMITS[TWENTY] = np.array([[11, 18], [83, 236], [119, 194]])
 
         self.hsv_board = np.array([[10, 22], [99, 224], [130, 214]])
 
