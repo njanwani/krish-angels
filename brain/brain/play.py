@@ -26,6 +26,10 @@ class Mode(Enum):
     TO_HAND = 3
     LET_GO = 4
 
+class Turn(Enum):
+    ROBOT = 0
+    PLAYER = 1
+
 # MAKE THIS MESSAGE DEPENDENT EVENTUALLY
 TEN = 0
 TWENTY = 1
@@ -35,8 +39,15 @@ ALL = 4
 
 EE_HEIGHT = 0.181 #0.193
 BOARD_HEIGHT = 0.09 #0.07
+BOARD_WIDTH = 0.6874
 GRIPPER_WIDTH = 0.06
 PUCK_RADIUS = 0.015
+
+ZONE_WIDTH = 0.1
+ZONE_A_ANG = [np.pi/2, 3*np.pi/2]
+ZONE_B_ANG = [np.pi, 2*np.pi]
+ZONE_C_ANG = [3*np.pi/2, 5*np.pi/2]
+ZONE_D_ANG = [0, np.pi]
 
 endgoalx = 0.05 #round(random.uniform(-0.2, 0.2), 2)
 endgoal = np.array([0.5, endgoalx, EE_HEIGHT + BOARD_HEIGHT])
@@ -59,6 +70,7 @@ class BrainNode(Node):
         # Initialize the node, naming it as specified
         super().__init__(name)
         self.mode = Mode.START
+        self.turn = Turn.ROBOT
         self.pucks = {}
         self.pucks[TEN] = []
         self.pucks[TWENTY] = []
@@ -73,10 +85,19 @@ class BrainNode(Node):
         self.armed = False
         self.armed_update = False
         self.moves = []
+        
+        self.board_center = None
+        # check y
+        self.zoneA = [-BOARD_WIDTH/2, -BOARD_WIDTH/2 + ZONE_WIDTH]
+        self.zoneC = [BOARD_WIDTH/2 - ZONE_WIDTH, BOARD_WIDTH/2]
+        # check x
+        self.zoneB = [-BOARD_WIDTH/2, -BOARD_WIDTH/2 + ZONE_WIDTH]
+        self.zoneD = [BOARD_WIDTH/2 - ZONE_WIDTH, BOARD_WIDTH/2]
 
         self.puck_sub = self.create_subscription(PoseArray, '/puckdetector/pucks', self.puck_cb, 10)
         self.ready_sub = self.create_subscription(Bool, '/low_level/ready', self.ready_cb, 1)
         self.armed_sub = self.create_subscription(Bool, '/low_level/armed', self.armed_cb, 1)
+        self.board_sub = self.create_subscription(Pose, '/boarddetector//pose', self.board_cb, 1)
 
         self.goal_pub = self.create_publisher(Pose, '/low_level/goal_2', 10)
         self.grip_pub = self.create_publisher(Bool, '/low_level/grip', 10)
@@ -132,7 +153,7 @@ class BrainNode(Node):
                     hnorm = np.linalg.norm(h)
 
                     # if hnorm > GRIPPER_WIDTH / 2:
-                    #     continue
+                    #     continueT
 
                     g = np.array([np.sin(angle), -np.cos(angle)])
                     theta = np.arccos(h @ g / (hnorm * np.linalg.norm(g)))
@@ -149,7 +170,7 @@ class BrainNode(Node):
             #     puck.angle = None
             # else:
             #     puck.angle = min(minangle, key=abs)
-            puck.angle = -np.pi # minangle
+            puck.angle = minangle
             ros_print(self, f'found angle {puck.angle}')
 
         self.updating_pucks = False
@@ -162,6 +183,12 @@ class BrainNode(Node):
         self.armed = msg.data
         self.armed_update = True
 
+    def board_cb(self, msg: Pose):
+        self.board_center = msg.data
+        self.zoneA = [y + self.board_center.y for y in self.zoneA]
+        self.zoneC = [y + self.board_center.y for y in self.zoneC]
+        self.zoneB = [x + self.board_center.x for x in self.zoneB]
+        self.zoneD = [x + self.board_center.x for x in self.zoneD]
 
     def work(self):
         self.t = time.time()
@@ -206,9 +233,31 @@ class BrainNode(Node):
                 self.focus = None
                 self.update_pucks()
 
+    def check_angle_bounds(self, puck, angle):
+        limit = []
+        # find zone
+        if puck.x[0] > self.zoneA[0] and puck.x[0] < self.zoneA[1]:
+            if puck.y[0] > self.zoneB[0] and puck.y[0] < self.zoneB[1]:
+                limit = [max(ZONE_A_ANG[0], ZONE_B_ANG[0]), min(ZONE_A_ANG[1], ZONE_B_ANG[1])]
+            elif puck.y[0] > self.zoneD[0] and puck.y[0] < self.zoneD[1]:
+                limit = [max(ZONE_A_ANG[0], ZONE_D_ANG[0]), min(ZONE_A_ANG[1], ZONE_D_ANG[1])]
+            else:
+                limit = ZONE_A_ANG
+        
+        elif puck.x[0] > self.zoneC[0] and puck.x[0] < self.zoneC[1]:
+            if puck.y[0] > self.zoneB[0] and puck.y[0] < self.zoneB[1]:
+                limit = [max(ZONE_C_ANG[0], ZONE_B_ANG[0]), min(ZONE_C_ANG[1], ZONE_B_ANG[1])]
+            elif puck.y[0] > self.zoneD[0] and puck.y[0] < self.zoneD[1]:
+                limit = [max(ZONE_C_ANG[0], ZONE_D_ANG[0]), min(ZONE_C_ANG[1], ZONE_D_ANG[1])]
+            else:
+                limit = ZONE_C_ANG
+        else:
+            return True
+        
+        # check if withstand angle bounds of zones
+        return angle <= limit[1] or angle >= limit[0]
 
     def think(self):
-        # ros_print(self, self.mode)
         if self.pucks[STRIKER] == [] and self.puckarray != []:
             # ros_print(self, 'trying to update')
             self.update_pucks()
@@ -217,23 +266,66 @@ class BrainNode(Node):
             idx = np.random.choice(np.arange(len(self.pucks[STRIKER])))
             self.focus = self.pucks[STRIKER][idx]
             
-        if self.moves == [] and not (self.focus is None):            
-            self.moves.append(Grab(self.focus.x, angle=self.focus.angle))
-            # self.moves.append(Move(pos=outgoal + np.array([0,0, EE_HEIGHT + BOARD_HEIGHT + 0.05]), angle=0))
-            # self.update_pucks()
-            # self.moves.append(Wait(3.0))
-            self.moves.append(Move(pos=np.mean(np.vstack((outgoal, endgoal)), axis=0) + np.array([0,0, EE_HEIGHT + BOARD_HEIGHT + 0.05]), angle=0))
+        if self.moves == [] and not (self.focus is None):
+            # start up
+            # robot turn
+            # detect/pick up striker, move out of way, pick best puck to shoot, drop puck, move out of way, hit striker
+            # player turn
+            # update pucks, detect when striker is placed in axis
+            if self.turn == Turn.ROBOT:
+                self.moves.append(Grab(self.focus.x, angle=self.focus.angle))
+                self.moves.append(Move(pos=np.mean(np.vstack((outgoal, endgoal)), axis=0) + np.array([0,0, EE_HEIGHT + BOARD_HEIGHT + 0.05]), angle=0))
 
-            # change ang to open in a way out of others
-            # self.moves.append(Move(pos=endgoal + np.array([0,0,0.05]), angle=0))
-            self.moves.append(Drop(pos=endgoal))
-            randpuck = random.choice(self.pucks[TEN])
-            angle = np.arctan2(randpuck.x[1]-endgoal[1], randpuck.x[0]-endgoal[0])
-            self.moves.append(Strike(pos=endgoal, angle=angle))
-            ros_print(self, f'angle dude {angle}')
-            self.moves.append(Wait(3.0))
-            self.moves.append(Move(pos=outgoal + np.array([0,0, EE_HEIGHT + BOARD_HEIGHT + 0.05]), angle=0))
-            # refind striker            
+                bestpuck = None
+                angle = None
+                while bestpuck is None:
+                    randpuck = random.choice(self.pucks[TEN])
+                    temp_angle = np.arctan2(randpuck.x[1]-endgoal[1], randpuck.x[0]-endgoal[0])
+                    if self.check_angle_bounds(randpuck, angle):
+                        bestpuck = randpuck
+                        angle = temp_angle
+
+                self.moves.append(Drop(pos=endgoal)) # change pos to where hit shoot be taken from
+                self.moves.append(Move(pos=np.mean(np.vstack((outgoal, endgoal)), axis=0) + np.array([0,0, EE_HEIGHT + BOARD_HEIGHT + 0.05]), angle=0))
+
+                # actual pos of dropped striker
+                self.update_pucks()
+                striker_pos = self.pucks[STRIKER][0]
+                endgoal = np.array([striker_pos.x[0], striker_pos.x[1], EE_HEIGHT + BOARD_HEIGHT + 0.05])
+                down = np.array([striker_pos.x[0], striker_pos.x[1], EE_HEIGHT + BOARD_HEIGHT])
+                self.moves.append(Move(pos=endgoal, angle=angle))
+                self.moves.append(Move(pos=down, angle=angle))
+
+                self.moves.append(Strike(pos=endgoal, angle=angle))
+                self.moves.append(Wait(3.0))
+                self.moves.append(Move(pos=outgoal + np.array([0,0, EE_HEIGHT + BOARD_HEIGHT + 0.05]), angle=0))
+                self.turn = Turn.PLAYER
+
+            else:
+                # check if striker in pos defined axis and no hands in board (FOR SAFETY)
+                self.update_pucks()
+                striker_pos = self.pucks[STRIKER][0]
+                if striker_pos[1] >= (self.board_center.y - BOARD_WIDTH/2 - 0.085) and striker_pos[1] <= self.board_center.y - BOARD_WIDTH/2 - 0.12:
+                    self.turn = Turn.ROBOT
+            
+            # self.moves.append(Grab(self.focus.x, angle=self.focus.angle))
+            # # self.moves.append(Move(pos=outgoal + np.array([0,0, EE_HEIGHT + BOARD_HEIGHT + 0.05]), angle=0))
+            # # self.update_pucks()
+            # # self.moves.append(Wait(3.0))
+            # self.moves.append(Move(pos=np.mean(np.vstack((outgoal, endgoal)), axis=0) + np.array([0,0, EE_HEIGHT + BOARD_HEIGHT + 0.05]), angle=0))
+
+            # # change ang to open in a way out of others
+            # # self.moves.append(Move(pos=endgoal + np.array([0,0,0.05]), angle=0))
+            # self.moves.append(Drop(pos=endgoal))
+            # randpuck = random.choice(self.pucks[TEN])
+            # angle = np.arctan2(randpuck.x[1]-endgoal[1], randpuck.x[0]-endgoal[0])
+
+            # randpuck = random.choice(self.pucks[TEN])
+            # angle = np.arctan2(randpuck.x[1]-endgoal[1], randpuck.x[0]-endgoal[0])
+            # self.moves.append(Strike(pos=endgoal, angle=angle))
+            # self.moves.append(Wait(3.0))
+            # self.moves.append(Move(pos=outgoal + np.array([0,0, EE_HEIGHT + BOARD_HEIGHT + 0.05]), angle=0))
+            # # refind striker            
 
     # Shutdown
     def shutdown(self):
