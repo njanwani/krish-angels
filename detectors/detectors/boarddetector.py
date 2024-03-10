@@ -151,7 +151,6 @@ class DetectorNode(Node):
                 accuracy = area / area_calc
                 ros_print(self, accuracy)
                     
-        #self.pub.publish(posearray_msg)
         if accuracy > 0.95:
             board_pose = Pose()
             board_pose.position.x = rect[0][0]
