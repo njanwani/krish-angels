@@ -60,11 +60,12 @@ class DetectorNode(Node):
         self.im_pub = self.create_publisher(Image, name + '/binary/' + BOARD, 3)
         self.im_raw_pub = self.create_publisher(Image, name + '/raw_image', 3)
         self.board_pub = self.create_publisher(Pose, name + '/pose', 3)
+        self.board_corner_pub = self.create_publisher(PoseArray + name + '/board_corners', 3)
 
         # eroding and dilating
         #self.filter = lambda b: cv2.erode(cv2.dilate(b, None, iterations=2), None, iterations=3)
         self.filter = lambda b: cv2.dilate(cv2.erode(cv2.dilate(b, None, iterations=2), None, iterations=9), None, iterations=7)
-        self.filter2 = lambda b: cv2.dilate(cv2.erode(b, None, iterations=1), None, iterations=2)
+        self.filter2 = lambda b: cv2.dilate(cv2.erode(b, None, iterations=0), None, iterations=2)
 
         self.last_bins = []
         for i in range(STORAGE_LEN):
@@ -144,20 +145,37 @@ class DetectorNode(Node):
                 (x,y), (w,h), theta = rect
                 box = cv2.boxPoints(rect) 
                 box = np.int0(box) 
-                frame = cv2.drawContours(frame, [box], 0, (0, 0, 255), 2) 
-
+                frame = cv2.drawContours(frame, [box], 0, (0, 0, 255), 2)
+                x_sort = box.tolist()
+                x_sort.sort(key=lambda x: x[0])
+                x_small = x_sort[:2]
+                x_large = x_sort[2:]
+                x_small.sort(key=lambda x: x[1])
+                x_large.sort(key=lambda x: x[1])
+                # ros_print(self, x_small)
+                box_sorted = [None] * 4
+                box_sorted[0] = x_small[0]
+                box_sorted[1] = x_small[1]
+                box_sorted[2] = x_large[0]
+                box_sorted[3] = x_large[1]
+                _sort = list(box).sort(key=lambda x: x[0])
+                for idx, pt in enumerate(box_sorted):
+                    cv2.putText(frame, str(idx), pt, cv2.FONT_HERSHEY_SIMPLEX,
+                        0.5, (255, 0, 0), 2, cv2.LINE_AA)
+                # ros_print(self, box)
                 area = cv2.contourArea(contour)
                 area_calc = w*h
                 accuracy = area / area_calc
-                ros_print(self, accuracy)
+                # ros_print(self, accuracy)
                     
-        if accuracy > 0.95:
+        if accuracy > 0.96:
             board_pose = Pose()
             board_pose.position.x = rect[0][0]
             board_pose.position.y = rect[0][1]
             board_pose.position.z = rect[2]
             self.board_pub.publish(board_pose)
             self.im_raw_pub.publish(self.bridge.cv2_to_imgmsg(frame, "rgb8"))
+            self.board_corner_pub.publish(box_sorted)
             self.last_bins.append(binary)
             self.last_bins = self.last_bins[1:]
 

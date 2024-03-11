@@ -178,8 +178,9 @@ class DemoNode(Node):
         # ros_print(self, msg.position.y)
         if np.all(self.TS['goal'].x == self.TS['p0'].x) and np.all(self.TS['goal'].R == self.TS['p0'].R):
             return
-    
-        if msg.position.x > 1.0 or msg.position.x < 0.1 or msg.position.y > 0.5 or msg.position.y < -0.3:
+
+        reach = (msg.position.x**2 + msg.position.y**2)**0.5
+        if reach < 0.1 or reach > 0.7 or msg.position.z < 0.0 or msg.position.z > 0.51:
             # ros_print(self, f'{msg.position.x, msg.position.y}')
             return
         
@@ -221,7 +222,7 @@ class DemoNode(Node):
         self.effort.update(msg.effort[:-1])
     
     def gravity(self, q):
-        ros_print(self, q[3] - q[2] + q[1])
+        # ros_print(self, q[3] - q[2] + q[1])
         t_wrist = 0.9 * np.sin(q[3] - q[2] + q[1]) + 0.1 * np.cos(q[-1])
         t_elbow = 7.5 * np.cos(q[1] - q[2]) - t_wrist #5.65 
         t_shoulder = -t_elbow - 9.0 * np.cos(q[1])

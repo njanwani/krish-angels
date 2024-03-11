@@ -57,7 +57,7 @@ class DetectorNode(Node):
         # Thresholds in Hmin/max, Smin/max, Vmin/max
         self.HSV_LIMITS = {}
         self.HSV_LIMITS[TEN] = np.array([[72, 93], [32, 151], [39, 156]])
-        self.HSV_LIMITS[STRIKER] = np.array([[23, 35], [24, 114], [129, 255]])
+        self.HSV_LIMITS[STRIKER] = np.array([[29, 44], [31, 84], [124, 192]])
         self.HSV_LIMITS[QUEEN] = np.array([[88, 117], [98, 255], [126, 199]])
         self.HSV_LIMITS[TWENTY] = np.array([[11, 18], [83, 236], [119, 194]])
 
@@ -79,7 +79,7 @@ class DetectorNode(Node):
         self.BINARY_FILTER[TEN] = lambda b: cv2.erode(cv2.dilate(b, None, iterations=1), None, iterations=1)
         self.BINARY_FILTER[TWENTY] = lambda b: cv2.dilate(cv2.erode(b, None, iterations=0), None, iterations=1)
         self.BINARY_FILTER[QUEEN] = lambda b: cv2.dilate(cv2.erode(b, None, iterations=0), None, iterations=1)
-        self.BINARY_FILTER[STRIKER] = lambda b: cv2.dilate(cv2.erode(b, None, iterations=1), None, iterations=1)
+        self.BINARY_FILTER[STRIKER] = lambda b: cv2.dilate(cv2.erode(b, None, iterations=0), None, iterations=1)
         self.BINARY_FILTER[BOARD] = lambda b: cv2.dilate(cv2.erode(b, None, iterations=2), None, iterations=1)
         
         # annotation colors

@@ -181,6 +181,8 @@ class Move:
             self.t0 = t
         elif self.mode == Move.Mode.TO_POS and armed and t - self.t0 > 1.0:
             self.mode = Move.Mode.STOP
+            self.t0 = t
+        elif self.mode == Move.Mode.STOP and t - self.t0 > 1.0:
             self.done = True
 
 
