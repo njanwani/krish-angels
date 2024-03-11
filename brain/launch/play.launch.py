@@ -110,6 +110,13 @@ def generate_launch_description():
         output     = 'screen',
         remappings = [('/image_raw', '/usb_cam/image_raw')])
     
+    node_gesturedetector = Node(
+        name       = 'gesturedetector', 
+        package    = 'detectors',
+        executable = 'gesturedetector',
+        output     = 'screen',
+        remappings = [('/image_raw', '/usb_cam/image_raw')])
+    
     node_webserver = Node(
         name       = 'webserver', 
         package    = 'detectors',
@@ -144,6 +151,7 @@ def generate_launch_description():
         node_usbcam,
         node_balldetector,
         node_boarddetector,
+        node_gesturedetector,
         #node_boarddetector,
         # node_webserver,
         play,

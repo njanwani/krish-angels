@@ -12,7 +12,7 @@
 import cv2
 import numpy as np
 from sklearn.cluster import KMeans
-
+import time
 # ROS Imports
 import rclpy
 import cv_bridge
@@ -71,7 +71,7 @@ class DetectorNode(Node):
         self.last_bins = []
         for i in range(STORAGE_LEN):
             self.last_bins.append(None)
-
+        self.last = time.time()
         
         # Set up the OpenCV bridge.
         self.bridge = cv_bridge.CvBridge()
@@ -97,6 +97,9 @@ class DetectorNode(Node):
 
     # Process the image (detect the ball).
     def process(self, msg):
+        if time.time() - self.last <= 1.0:
+            return
+        self.last = time.time()
         # Confirm the encoding and report.
         assert(msg.encoding == "rgb8")
 
@@ -166,11 +169,15 @@ class DetectorNode(Node):
                 cv2.circle(frame, v2, 5, (255, 0, 255), -1)
 
                 xyShot1 = self.pixelToWorld(frame, v1[0], v1[1], self.x0, self.y0)
+                if xyShot1 is None:
+                    return
                 shot1 = Pose()
                 shot1.position.x = float(xyShot1[0])
                 shot1.position.y = float(xyShot1[1])
 
                 xyShot2 = self.pixelToWorld(frame, v2[0], v2[1], self.x0, self.y0)
+                if xyShot2 is None:
+                    return
                 shot2 = Pose()
                 shot2.position.x = float(xyShot2[0])
                 shot2.position.y = float(xyShot2[1])

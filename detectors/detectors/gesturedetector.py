@@ -13,6 +13,7 @@ import numpy as np
 import mediapipe as mp
 from mediapipe.tasks import python
 from mediapipe.tasks.python import vision
+import time
 # ROS Imports
 import rclpy
 import cv_bridge
@@ -52,6 +53,7 @@ class DemoNode(Node):
         # Set up the OpenCV bridge.
         self.bridge = cv_bridge.CvBridge()
         self.successes = 0
+        self.last = time.time()
 
         # Finally, subscribe to the incoming image topic.  Using a
         # queue size of one means only the most recent message is
@@ -61,7 +63,7 @@ class DemoNode(Node):
         self.sub = self.create_subscription(
             Image, '/image_raw', self.process, 1)
             
-        self.successpub = self.create_publisher(Bool, name+'/success',    3)
+        self.successpub = self.create_publisher(Bool, name+'/thumbs',    3)
         self.pubcirc = self.create_publisher(Point, name+'/circle',    3)
 
 
@@ -73,7 +75,9 @@ class DemoNode(Node):
 
     # Process the image (detect the ball).
     def process(self, msg):
-        
+        if time.time() - self.last <= 0.25:
+            return
+        self.last = time.time()
         assert(msg.encoding == "rgb8")
 
         imgRGB = self.bridge.imgmsg_to_cv2(msg, "passthrough")
@@ -95,7 +99,7 @@ class DemoNode(Node):
                     cv2.circle(imgRGB, (cx,cy), 3, (255,0,255), cv2.FILLED)
 
                 # mpDraw.draw_landmarks(img, handLms, mpHands.HAND_CONNECTIONS)
-
+        # ros_print(self, top_gesture)
         if top_gesture is not None and top_gesture in ['Thumb_Up', 'Thumb_Down']: self.successes += 1
         else: self.successes = 0
 

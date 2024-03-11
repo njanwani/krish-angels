@@ -96,13 +96,14 @@ class BrainNode(Node):
         # # check x
         # self.zoneB = [-BOARD_WIDTH/2, -BOARD_WIDTH/2 + ZONE_WIDTH]
         # self.zoneD = [BOARD_WIDTH/2 - ZONE_WIDTH, BOARD_WIDTH/2]
-
+        self.thumbs_up = False
         self.puck_sub = self.create_subscription(PoseArray, '/puckdetector/pucks', self.puck_cb, 10)
         self.ready_sub = self.create_subscription(Bool, '/low_level/ready', self.ready_cb, 1)
         self.armed_sub = self.create_subscription(Bool, '/low_level/armed', self.armed_cb, 1)
         self.board_sub = self.create_subscription(Pose, '/boarddetector/pose', self.board_cb, 1)
         self.board_corners_sub = self.create_subscription(PoseArray, '/boarddetector/board_corners', self.board_corners_cb, 1)
         self.shot_axis_sub = self.create_subscription(PoseArray, '/boarddetector/shot_axis', self.shot_axis_cb, 1)
+        self.thumbs_up_sub = self.create_subscription(Bool, '/gesture/thumbs', self.thumbs_up_cb, 1)
 
         self.goal_pub = self.create_publisher(Pose, '/low_level/goal_2', 10)
         self.grip_pub = self.create_publisher(Bool, '/low_level/grip', 10)
@@ -176,7 +177,7 @@ class BrainNode(Node):
             # else:
             #     puck.angle = min(minangle, key=abs)
             puck.angle = minangle
-            ros_print(self, f'found angle {puck.angle}')
+            # ros_print(self, f'found angle {puck.angle}')
 
         self.updating_pucks = False
 
@@ -197,6 +198,9 @@ class BrainNode(Node):
 
     def board_corners_cb(self, msg: PoseArray):
         self.board_corners = msg.poses
+
+    def thumbs_up_cb(self, msg: Bool):
+        self.thumbs_up = msg.data
 
     def shot_axis_cb(self, msg: PoseArray):
         # ros_print(self, 'shot_axis_cb')
@@ -292,6 +296,7 @@ class BrainNode(Node):
                     idx = np.random.choice(np.arange(len(self.pucks[STRIKER])))
                     self.focus = self.pucks[STRIKER][idx]
 
+                    self.moves.append(Move(pos=self.focus.x + np.array([0, 0, 0.2]), angle=self.focus.angle))
                     self.moves.append(Grab(self.focus.x, angle=self.focus.angle))
                     self.moves.append(Move(pos=self.focus.x + np.array([0, 0, 0.2]), angle=self.focus.angle))
                     self.moves.append(Move(pos=self.HOME, angle=0))
@@ -304,9 +309,11 @@ class BrainNode(Node):
                     self.shoot_pos = positions[np.random.choice(list(range(0, len(positions))))]
                     ros_print(self, self.shot_axis)
                     ros_print(self, self.shoot_pos + np.array([0, 0, 0.2]))
-                if self.pucks[TEN] is not None:
-                    randpuck = random.choice(self.pucks[TEN])
-                    self.shoot_angle = -np.arctan2(randpuck.x[1]-endgoal[1], randpuck.x[0]-endgoal[0])
+
+                pucks = self.pucks[TEN] + self.pucks[TWENTY] + self.pucks[QUEEN]
+                if pucks is not None or pucks is not []:
+                    randpuck = random.choice(pucks)
+                    self.shoot_angle = -np.arctan2(randpuck.x[1]-self.shoot_pos[1], randpuck.x[0]-self.shoot_pos[0])
                 self.moves.append(Move(pos=self.shoot_pos + np.array([0, 0, 0.2]), angle=self.shoot_angle))
                 self.moves.append(Drop(self.shoot_pos, angle=self.shoot_angle))
                 self.moves.append(Move(pos=self.shoot_pos + np.array([0, 0, 0.2]), angle=self.shoot_angle))
@@ -319,9 +326,10 @@ class BrainNode(Node):
                     self.focus = self.pucks[STRIKER][idx]
 
                     _, shoot_angle = None, 0.0 # SWITCH WITH PLAY ALGO(self.shoot_pos)
-                    if self.pucks[TEN] is not None:
-                        randpuck = random.choice(self.pucks[TEN])
-                        self.shoot_angle = -np.arctan2(randpuck.x[1]-endgoal[1], randpuck.x[0]-endgoal[0])
+                    pucks = self.pucks[TEN] + self.pucks[TWENTY] + self.pucks[QUEEN]
+                    if pucks is not None or pucks is not []:
+                        randpuck = random.choice(pucks)
+                        self.shoot_angle = -np.arctan2(randpuck.x[1]-self.focus.x[1], randpuck.x[0]-self.focus.x[0])
 
                     delta = 0.015 * np.array([np.cos(shoot_angle + np.pi), np.sin(shoot_angle + np.pi), 0])
                     self.moves.append(Move(pos=self.focus.x + delta + np.array([0, 0, 0.2]), angle=self.shoot_angle))
@@ -331,16 +339,16 @@ class BrainNode(Node):
                     self.moves.append(Move(pos=self.HOME, angle=0))
 
             elif self.stage == Stage.RETURN:
-                pass
+                self.turn = Turn.PLAYER
             elif self.stage not in Stage:
                 raise Exception(f'Unknown Stage encountered: {self.stage}')
 
         else:
             # check if striker in pos defined axis and no hands in board (FOR SAFETY)
             self.update_pucks()
-            striker_pos = self.pucks[STRIKER][0]
-            if striker_pos[1] >= (self.board_center.y - BOARD_WIDTH/2 - 0.085) and striker_pos[1] <= self.board_center.y - BOARD_WIDTH/2 - 0.12:
-                self.turn = Turn.ROBOT    
+            if self.thumbs_up:
+                self.stage = Stage.GET
+                self.turn = Turn.ROBOT
 
     # Shutdown
     def shutdown(self):

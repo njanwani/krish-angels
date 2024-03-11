@@ -193,7 +193,7 @@ class DemoNode(Node):
            and not gripping:
             return
         self.armed = False
-        ros_print(self, 'RE_SPLINE')
+        # ros_print(self, 'RE_SPLINE')
         v_last, a_last = 0,0
         if self.mode == Mode.TASK:
             _, v_last, a_last = spline5(self.t - self.t0, self.tmove, self.TS['p0'].x.flatten(), self.TS['goal'].x.flatten(), self.TS['v0'],0, self.TS['a0'], 0)
