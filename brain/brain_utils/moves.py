@@ -31,11 +31,12 @@ class Grab:
         if self.mode == Grab.Mode.START:
             pass
         elif self.mode == Grab.Mode.TO_OBJ:
-            goal = [None, None]
+            goal = [None, None, None]
             goal[0] = self.pos
             if self.angle is None:
                 self.angle = np.arctan2(self.pos[1], self.pos[0])
             goal[1] = self.angle
+            goal[2] = 0
             grip = False
         elif self.mode == Grab.Mode.GRAB:
             grip = True
@@ -79,11 +80,12 @@ class Drop:
         if self.mode == Drop.Mode.START:
             pass
         elif self.mode == Drop.Mode.TO_POS:
-            goal = [None, None]
+            goal = [None, None, None]
             goal[0] = self.pos
             if self.angle is None:
                 self.angle = np.arctan2(self.pos[1], self.pos[0])
             goal[1] = self.angle
+            goal[2] = 0
             grip = True
         elif self.mode == Drop.Mode.DROP:
             grip = False
@@ -126,9 +128,10 @@ class Strike:
         if self.mode == Strike.Mode.START:
             pass
         elif self.mode == Strike.Mode.TO_POS:
-            goal = [None, None]
+            goal = [None, None, None]
             goal[0] = self.pos
             goal[1] = self.angle
+            goal[2] = np.pi / 6
         elif self.mode == Strike.Mode.STRIKE:
             strike = 255
         elif self.mode == Strike.Mode.STOP:
@@ -168,9 +171,10 @@ class Move:
         if self.mode == Move.Mode.START:
             pass
         elif self.mode == Move.Mode.TO_POS:
-            goal = [None, None]
+            goal = [None, None, None]
             goal[0] = self.pos
             goal[1] = self.angle
+            goal[2] = 0
         elif self.mode == Move.Mode.STOP:
             pass
         else:

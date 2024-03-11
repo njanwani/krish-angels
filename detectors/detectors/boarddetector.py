@@ -60,7 +60,8 @@ class DetectorNode(Node):
         self.im_pub = self.create_publisher(Image, name + '/binary/' + BOARD, 3)
         self.im_raw_pub = self.create_publisher(Image, name + '/raw_image', 3)
         self.board_pub = self.create_publisher(Pose, name + '/pose', 3)
-        self.board_corner_pub = self.create_publisher(PoseArray + name + '/board_corners', 3)
+        self.board_corner_pub = self.create_publisher(PoseArray, name + '/board_corners', 3)
+        self.shot_axis_pub = self.create_publisher(PoseArray, name + '/shot_axis', 3)
 
         # eroding and dilating
         #self.filter = lambda b: cv2.erode(cv2.dilate(b, None, iterations=2), None, iterations=3)
@@ -109,23 +110,14 @@ class DetectorNode(Node):
         vc = H//2
         
         markerCorners, markerIds, _ = cv2.aruco.detectMarkers(frame, cv2.aruco.getPredefinedDictionary(cv2.aruco.DICT_4X4_50))
+        posearray_msg = PoseArray()
+        poses = []
+        # poses_coords = []
 
         binary = cv2.inRange(hsv, self.hsv_thresh[:,0], self.hsv_thresh[:,1])
-        # binary = self.filter(binary)
         binary = self.filter2(binary)
 
-        # if needed, seed the storage queue with the first binary seen
-        # for i in range(STORAGE_LEN):
-        #     if self.last_bins[i] is None:
-        #         self.last_bins[i] = binary
         
-        # # initialize the average for scope
-        # avg_bin = cv2.addWeighted(binary, 1, binary, 0, 0.0)
-        # # merge the last N binaries to get a more reliable board edge
-        # for i in range(STORAGE_LEN):
-        #     avg_bin = cv2.addWeighted(avg_bin, 1, self.last_bins[STORAGE_LEN - i - 1], 1, 0.0)
-
-        #(contours, hierarchy) = cv2.findContours(binary, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
         (contours, hierarchy) = cv2.findContours(binary, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
         self.im_pub.publish(self.bridge.cv2_to_imgmsg(binary, "mono8"))
         accuracy = 0
@@ -139,10 +131,8 @@ class DetectorNode(Node):
                 if cv2.contourArea(contour) < 0:
                     return
 
-
-
                 rect = cv2.minAreaRect(contour)
-                (x,y), (w,h), theta = rect
+                (x,y), (bw,bh), theta = rect
                 box = cv2.boxPoints(rect) 
                 box = np.int0(box) 
                 frame = cv2.drawContours(frame, [box], 0, (0, 0, 255), 2)
@@ -162,20 +152,65 @@ class DetectorNode(Node):
                 for idx, pt in enumerate(box_sorted):
                     cv2.putText(frame, str(idx), pt, cv2.FONT_HERSHEY_SIMPLEX,
                         0.5, (255, 0, 0), 2, cv2.LINE_AA)
-                # ros_print(self, box)
+                theta = np.arctan2(box_sorted[1][1] - box_sorted[0][1], box_sorted[1][0] - box_sorted[0][0])
+                
+                w, h = (95, 70)
+                p1 = np.array([w * np.cos(theta), w * np.sin(theta)])
+                p2 = np.array([h * np.cos(theta - np.pi / 2), h * np.sin(theta - np.pi / 2)])
+                v1 = tuple((np.array(box_sorted[0]) + p1 + p2).astype(int))
+                cv2.circle(frame, v1, 5, (255, 0, 255), -1)
+
+                p1 = np.array([-w * np.cos(theta),- w * np.sin(theta)])
+                p2 = np.array([h * np.cos(theta - np.pi / 2), h * np.sin(theta - np.pi / 2)])
+                v2 = tuple((np.array(box_sorted[1]) + p1 + p2).astype(int))
+                cv2.circle(frame, v2, 5, (255, 0, 255), -1)
+
+                xyShot1 = self.pixelToWorld(frame, v1[0], v1[1], self.x0, self.y0)
+                shot1 = Pose()
+                shot1.position.x = float(xyShot1[0])
+                shot1.position.y = float(xyShot1[1])
+
+                xyShot2 = self.pixelToWorld(frame, v2[0], v2[1], self.x0, self.y0)
+                shot2 = Pose()
+                shot2.position.x = float(xyShot2[0])
+                shot2.position.y = float(xyShot2[1])
+
+                shots = PoseArray()
+                shots.poses = [shot1, shot2]
+                self.shot_axis_pub.publish(shots)
+
                 area = cv2.contourArea(contour)
-                area_calc = w*h
+                area_calc = bw*bh
                 accuracy = area / area_calc
-                # ros_print(self, accuracy)
+                ros_print(self, accuracy)
                     
         if accuracy > 0.96:
+            xyCenter = self.pixelToWorld(frame, rect[0][0], rect[0][1], self.x0, self.y0)
+            if xyCenter is None:
+                return
+            (xc, yc) = xyCenter
             board_pose = Pose()
-            board_pose.position.x = rect[0][0]
-            board_pose.position.y = rect[0][1]
-            board_pose.position.z = rect[2]
+            # board_pose.position.x = rect[0][0]
+            # board_pose.position.y = rect[0][1]
+            board_pose.position.x = float(xc)
+            board_pose.position.y = float(yc)
+            board_pose.position.z = 0.0
             self.board_pub.publish(board_pose)
             self.im_raw_pub.publish(self.bridge.cv2_to_imgmsg(frame, "rgb8"))
-            self.board_corner_pub.publish(box_sorted)
+
+            for i in range(len(box_sorted)):
+                cx = box_sorted[i][0]
+                cy = box_sorted[i][1]
+                xyCorner = self.pixelToWorld(frame, cx, cy, self.x0, self.y0)
+                if xyCorner is None:
+                    return
+                (xco, yco) = xyCorner
+                pose = Pose()
+                pose.position.x = float(xco)
+                pose.position.y = float(yco)
+                poses.append(pose)
+            posearray_msg.poses = poses
+            self.board_corner_pub.publish(posearray_msg)
             self.last_bins.append(binary)
             self.last_bins = self.last_bins[1:]
 

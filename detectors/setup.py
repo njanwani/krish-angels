@@ -33,7 +33,8 @@ setup(
             'detectaruco   = detectors.detectaruco:main',
             'writearuco    = detectors.writearuco:main',
             'webserver    = detectors.webserver:main',
-            'boarddetector    = detectors.boarddetector:main'
+            'boarddetector    = detectors.boarddetector:main',
+            'gesturedetector    = detectors.gesturedetector:main'
         ],
     },
 )

@@ -33,13 +33,15 @@ class Mode(Enum):
     STILL = 5
 
 class RobotPose:
-    def __init__(self, x, theta):
+    def __init__(self, x, theta, pitch=0, R=None):
         self.x = x
         self.theta = theta
+        self.pitch = pitch
+        if R is None:
+            self.R = Reye() @ Roty(self.pitch) @ Rotz(self.theta)
 
-    @property
-    def R(self):
-        return Reye() @ Roty(0) @ Rotz(self.theta)
+    def recalcR(self):
+        self.R = Reye() @ Roty(self.pitch) @ Rotz(self.theta)
 
 class Filter:
     def __init__(self, T, x0):
@@ -184,7 +186,7 @@ class DemoNode(Node):
             # ros_print(self, f'{msg.position.x, msg.position.y}')
             return
         
-        R = Reye() @ Roty(0) @ Rotz(msg.orientation.z)
+        R = Reye() @ Roty(msg.orientation.y) @ Rotz(msg.orientation.z)
         
         if np.all(np.isclose(np.array([msg.position.x, msg.position.y, msg.position.z]), self.TS['goal'].x, atol=0.01)) \
            and np.all(np.isclose(R, self.TS['goal'].R, atol=0.01)) \
@@ -201,8 +203,11 @@ class DemoNode(Node):
                                       msg.position.y,
                                       msg.position.z])
         self.TS['goal'].theta = msg.orientation.z
+        self.TS['goal'].pitch = msg.orientation.y
+        self.TS['goal'].recalcR()
         self.TS['p0'] = RobotPose(self.chain.fkin(self.JS['q_last'])[0], self.JS['q_last'][0] - self.JS['q_last'][-1])
-
+        self.TS['p0'].R = self.chain.fkin(self.JS['q_last'])[1]
+        # -self.JS['q_last'][1] + self.JS['q_last'][1] - self.JS['q_last'][1]
 
         if self.mode in [Mode.STILL, Mode.TASK]:
             self.mode = Mode.TASK
@@ -264,7 +269,7 @@ class DemoNode(Node):
         q, qdot = np.array(list(q) + [gq]), np.array(list(qdot) + [gqdot])
         if sing:
             mode = Mode.JOINT
-            self.t0 = self.t 
+            self.t0 = self.t
             self.JS['q0'] = self.JS['q_act']
             self.tmove = splinetime(self.JS['q0'], self.JS['q_start'], 0, 0, DemoNode.VMAX, DemoNode.AMAX, cartesian=False)
         return q, qdot

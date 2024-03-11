@@ -37,7 +37,7 @@ STRIKER = 3
 ALL = 4
 
 EE_HEIGHT = 0.181 #0.193
-BOARD_HEIGHT = 0.09 #0.07
+BOARD_HEIGHT = 0.07 #0.07
 BOARD_WIDTH = 0.6874
 GRIPPER_WIDTH = 0.06
 PUCK_RADIUS = 0.015
@@ -218,6 +218,7 @@ class BrainNode(Node):
             posemsg.position.y = float(goal[0][1])
             posemsg.position.z = float(goal[0][2])
             posemsg.orientation.z = float(goal[1])
+            posemsg.orientation.y = float(goal[2])
             self.goal_pub.publish(posemsg)
             self.armed = False
             self.ready = False
@@ -246,19 +247,24 @@ class BrainNode(Node):
         # find zone
         if puck.x[0] > self.zoneA[0] and puck.x[0] < self.zoneA[1]:
             if puck.y[0] > self.zoneB[0] and puck.y[0] < self.zoneB[1]:
-                limit = [max(ZONE_A_ANG[0], ZONE_B_ANG[0]), min(ZONE_A_ANG[1], ZONE_B_ANG[1])]
+                limit = [max(ZONE_ANGS['A'][0], ZONE_ANGS['B'][0]), min(ZONE_ANGS['A'][1], ZONE_ANGS['B'][1])]
             elif puck.y[0] > self.zoneD[0] and puck.y[0] < self.zoneD[1]:
-                limit = [max(ZONE_A_ANG[0], ZONE_D_ANG[0]), min(ZONE_A_ANG[1], ZONE_D_ANG[1])]
+                limit = [max(ZONE_ANGS['A'][0], ZONE_ANGS['D'][0]), min(ZONE_ANGS['A'][1], ZONE_ANGS['D'][1])]
             else:
-                limit = ZONE_A_ANG
+                limit = ZONE_ANGS['A']
         
         elif puck.x[0] > self.zoneC[0] and puck.x[0] < self.zoneC[1]:
             if puck.y[0] > self.zoneB[0] and puck.y[0] < self.zoneB[1]:
-                limit = [max(ZONE_C_ANG[0], ZONE_B_ANG[0]), min(ZONE_C_ANG[1], ZONE_B_ANG[1])]
+                limit = [max(ZONE_ANGS['C'][0], ZONE_ANGS['B'][0]), min(ZONE_ANGS['C'][1], ZONE_ANGS['B'][1])]
             elif puck.y[0] > self.zoneD[0] and puck.y[0] < self.zoneD[1]:
-                limit = [max(ZONE_C_ANG[0], ZONE_D_ANG[0]), min(ZONE_C_ANG[1], ZONE_D_ANG[1])]
+                limit = [max(ZONE_ANGS['C'][0], ZONE_ANGS['D'][0]), min(ZONE_ANGS['C'][1], ZONE_ANGS['D'][1])]
             else:
-                limit = ZONE_C_ANG
+                limit = ZONE_ANGS['C']
+        
+        elif puck.y[0] > self.zoneB[0] and puck.y[0] < self.zoneB[1]:
+            limit = ZONE_ANGS['C']
+        elif puck.y[0] > self.zoneD[0] and puck.y[0] < self.zoneD[1]:
+            limit = ZONE_ANGS['D']
         else:
             return True
         
@@ -281,7 +287,7 @@ class BrainNode(Node):
 
             elif self.stage == Stage.PUT and self.moves == []:
                 self.update_pucks()
-                self.shoot_pos, self.shoot_angle = np.array([0.3, 0.0, BOARD_HEIGHT + EE_HEIGHT]), 0.0 # SWITCH WITH PLAY ALGO
+                self.shoot_pos, self.shoot_angle = np.array([0.4, 0.0, BOARD_HEIGHT + EE_HEIGHT]), 0.0 # SWITCH WITH PLAY ALGO
                 self.moves.append(Move(pos=self.shoot_pos + np.array([0, 0, 0.2]), angle=self.shoot_angle))
                 self.moves.append(Drop(self.shoot_pos, angle=self.shoot_angle))
                 self.moves.append(Move(pos=self.shoot_pos + np.array([0, 0, 0.2]), angle=self.shoot_angle))

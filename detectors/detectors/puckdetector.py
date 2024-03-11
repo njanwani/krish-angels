@@ -77,7 +77,7 @@ class DetectorNode(Node):
         # eroding and dilating
         self.BINARY_FILTER = {}
         self.BINARY_FILTER[TEN] = lambda b: cv2.erode(cv2.dilate(b, None, iterations=1), None, iterations=1)
-        self.BINARY_FILTER[TWENTY] = lambda b: cv2.dilate(cv2.erode(b, None, iterations=0), None, iterations=1)
+        self.BINARY_FILTER[TWENTY] = lambda b: cv2.dilate(cv2.erode(b, None, iterations=1), None, iterations=1)
         self.BINARY_FILTER[QUEEN] = lambda b: cv2.dilate(cv2.erode(b, None, iterations=0), None, iterations=1)
         self.BINARY_FILTER[STRIKER] = lambda b: cv2.dilate(cv2.erode(b, None, iterations=0), None, iterations=1)
         self.BINARY_FILTER[BOARD] = lambda b: cv2.dilate(cv2.erode(b, None, iterations=2), None, iterations=1)

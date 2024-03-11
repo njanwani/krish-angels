@@ -72,7 +72,7 @@ def generate_launch_description():
         parameters = [{'family':   'robotlab'},
                       {'motors':   ['4.6',  '4.7',  '4.4', '4.3', '4.2', '9.3']},
                       {'joints':   ['base', 'shoulder', 'elbow', 'wrist', 'end', 'grip']},
-                      {'testmode' : 'track'}],
+                      {'testmode' : 'off'}],
         on_exit    = Shutdown())
     
     end_effector = Node(
