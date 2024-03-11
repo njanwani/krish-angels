@@ -37,7 +37,7 @@ STRIKER = 3
 ALL = 4
 
 EE_HEIGHT = 0.181 #0.193
-BOARD_HEIGHT = 0.07 #0.07
+BOARD_HEIGHT = 0.095 #0.07
 BOARD_WIDTH = 0.6874
 GRIPPER_WIDTH = 0.06
 PUCK_RADIUS = 0.015
@@ -88,17 +88,21 @@ class BrainNode(Node):
         self.moves = []
         
         self.board_center = None
-        # check y
-        self.zoneA = lambda center: ([center.x - BOARD_WIDTH / 2 + ZONE_WIDTH, center.y - BOARD_WIDTH / 2 + ZONE_WIDTH])
-        self.zoneC = [BOARD_WIDTH/2 - ZONE_WIDTH, BOARD_WIDTH/2]
-        # check x
-        self.zoneB = [-BOARD_WIDTH/2, -BOARD_WIDTH/2 + ZONE_WIDTH]
-        self.zoneD = [BOARD_WIDTH/2 - ZONE_WIDTH, BOARD_WIDTH/2]
+        self.board_corners = None
+        self.shot_axis = None
+        # # check y
+        # self.zoneA = lambda center: ([center.x - BOARD_WIDTH / 2 + ZONE_WIDTH, center.y - BOARD_WIDTH / 2 + ZONE_WIDTH])
+        # self.zoneC = [BOARD_WIDTH/2 - ZONE_WIDTH, BOARD_WIDTH/2]
+        # # check x
+        # self.zoneB = [-BOARD_WIDTH/2, -BOARD_WIDTH/2 + ZONE_WIDTH]
+        # self.zoneD = [BOARD_WIDTH/2 - ZONE_WIDTH, BOARD_WIDTH/2]
 
         self.puck_sub = self.create_subscription(PoseArray, '/puckdetector/pucks', self.puck_cb, 10)
         self.ready_sub = self.create_subscription(Bool, '/low_level/ready', self.ready_cb, 1)
         self.armed_sub = self.create_subscription(Bool, '/low_level/armed', self.armed_cb, 1)
         self.board_sub = self.create_subscription(Pose, '/boarddetector/pose', self.board_cb, 1)
+        self.board_corners_sub = self.create_subscription(PoseArray, '/boarddetector/board_corners', self.board_corners_cb, 1)
+        self.shot_axis_sub = self.create_subscription(PoseArray, '/boarddetector/shot_axis', self.shot_axis_cb, 1)
 
         self.goal_pub = self.create_publisher(Pose, '/low_level/goal_2', 10)
         self.grip_pub = self.create_publisher(Bool, '/low_level/grip', 10)
@@ -185,11 +189,18 @@ class BrainNode(Node):
         self.armed_update = True
 
     def board_cb(self, msg: Pose):
-        self.board_center = msg.data
-        self.zoneA = [y + self.board_center.y for y in self.zoneA]
-        self.zoneC = [y + self.board_center.y for y in self.zoneC]
-        self.zoneB = [x + self.board_center.x for x in self.zoneB]
-        self.zoneD = [x + self.board_center.x for x in self.zoneD]
+        self.board_center = msg.position
+        # self.zoneA = [y + self.board_center.y for y in self.zoneA]
+        # self.zoneC = [y + self.board_center.y for y in self.zoneC]
+        # self.zoneB = [x + self.board_center.x for x in self.zoneB]
+        # self.zoneD = [x + self.board_center.x for x in self.zoneD]
+
+    def board_corners_cb(self, msg: PoseArray):
+        self.board_corners = msg.poses
+
+    def shot_axis_cb(self, msg: PoseArray):
+        # ros_print(self, 'shot_axis_cb')
+        self.shot_axis = msg.poses
 
     def transit_stage(self):
         if self.stage == Stage.GET: self.stage = Stage.PUT
@@ -206,7 +217,7 @@ class BrainNode(Node):
         #     # ros_print(self, 'LATE UPDATE')
         #     time.sleep(0.2)
         #     return
-        ros_print(self, f'{type(self.moves[0])} and {self.armed} and {self.ready} and {self.moves[0].mode}')
+        # ros_print(self, f'{type(self.moves[0])} and {self.armed} and {self.ready} and {self.moves[0].mode}')
         goal, grip, strike = self.moves[0].step(self.t, self.ready, self.armed)
         self.armed_update = False
         self.ready_update = False
@@ -242,34 +253,34 @@ class BrainNode(Node):
                 self.transit_stage()
                 self.update_pucks()
 
-    def check_angle_bounds(self, puck, angle):
-        limit = []
-        # find zone
-        if puck.x[0] > self.zoneA[0] and puck.x[0] < self.zoneA[1]:
-            if puck.y[0] > self.zoneB[0] and puck.y[0] < self.zoneB[1]:
-                limit = [max(ZONE_ANGS['A'][0], ZONE_ANGS['B'][0]), min(ZONE_ANGS['A'][1], ZONE_ANGS['B'][1])]
-            elif puck.y[0] > self.zoneD[0] and puck.y[0] < self.zoneD[1]:
-                limit = [max(ZONE_ANGS['A'][0], ZONE_ANGS['D'][0]), min(ZONE_ANGS['A'][1], ZONE_ANGS['D'][1])]
-            else:
-                limit = ZONE_ANGS['A']
+    # def check_angle_bounds(self, puck, angle):
+    #     limit = []
+    #     # find zone
+    #     if puck.x[0] > self.zoneA[0] and puck.x[0] < self.zoneA[1]:
+    #         if puck.y[0] > self.zoneB[0] and puck.y[0] < self.zoneB[1]:
+    #             limit = [max(ZONE_ANGS['A'][0], ZONE_ANGS['B'][0]), min(ZONE_ANGS['A'][1], ZONE_ANGS['B'][1])]
+    #         elif puck.y[0] > self.zoneD[0] and puck.y[0] < self.zoneD[1]:
+    #             limit = [max(ZONE_ANGS['A'][0], ZONE_ANGS['D'][0]), min(ZONE_ANGS['A'][1], ZONE_ANGS['D'][1])]
+    #         else:
+    #             limit = ZONE_ANGS['A']
         
-        elif puck.x[0] > self.zoneC[0] and puck.x[0] < self.zoneC[1]:
-            if puck.y[0] > self.zoneB[0] and puck.y[0] < self.zoneB[1]:
-                limit = [max(ZONE_ANGS['C'][0], ZONE_ANGS['B'][0]), min(ZONE_ANGS['C'][1], ZONE_ANGS['B'][1])]
-            elif puck.y[0] > self.zoneD[0] and puck.y[0] < self.zoneD[1]:
-                limit = [max(ZONE_ANGS['C'][0], ZONE_ANGS['D'][0]), min(ZONE_ANGS['C'][1], ZONE_ANGS['D'][1])]
-            else:
-                limit = ZONE_ANGS['C']
+    #     elif puck.x[0] > self.zoneC[0] and puck.x[0] < self.zoneC[1]:
+    #         if puck.y[0] > self.zoneB[0] and puck.y[0] < self.zoneB[1]:
+    #             limit = [max(ZONE_ANGS['C'][0], ZONE_ANGS['B'][0]), min(ZONE_ANGS['C'][1], ZONE_ANGS['B'][1])]
+    #         elif puck.y[0] > self.zoneD[0] and puck.y[0] < self.zoneD[1]:
+    #             limit = [max(ZONE_ANGS['C'][0], ZONE_ANGS['D'][0]), min(ZONE_ANGS['C'][1], ZONE_ANGS['D'][1])]
+    #         else:
+    #             limit = ZONE_ANGS['C']
         
-        elif puck.y[0] > self.zoneB[0] and puck.y[0] < self.zoneB[1]:
-            limit = ZONE_ANGS['C']
-        elif puck.y[0] > self.zoneD[0] and puck.y[0] < self.zoneD[1]:
-            limit = ZONE_ANGS['D']
-        else:
-            return True
+    #     elif puck.y[0] > self.zoneB[0] and puck.y[0] < self.zoneB[1]:
+    #         limit = ZONE_ANGS['C']
+    #     elif puck.y[0] > self.zoneD[0] and puck.y[0] < self.zoneD[1]:
+    #         limit = ZONE_ANGS['D']
+    #     else:
+    #         return True
         
-        # check if withstand angle bounds of zones
-        return angle <= limit[1] or angle >= limit[0]
+    #     # check if withstand angle bounds of zones
+    #     return angle <= limit[1] or angle >= limit[0]
 
     def think(self):
         ros_print(self, self.stage)
@@ -288,6 +299,14 @@ class BrainNode(Node):
             elif self.stage == Stage.PUT and self.moves == []:
                 self.update_pucks()
                 self.shoot_pos, self.shoot_angle = np.array([0.4, 0.0, BOARD_HEIGHT + EE_HEIGHT]), 0.0 # SWITCH WITH PLAY ALGO
+                if self.shot_axis is not None:
+                    positions = np.linspace([self.shot_axis[0].position.x, self.shot_axis[0].position.y, BOARD_HEIGHT + EE_HEIGHT], [self.shot_axis[1].position.x, self.shot_axis[1].position.y, BOARD_HEIGHT + EE_HEIGHT], num=20)
+                    self.shoot_pos = positions[np.random.choice(list(range(0, len(positions))))]
+                    ros_print(self, self.shot_axis)
+                    ros_print(self, self.shoot_pos + np.array([0, 0, 0.2]))
+                if self.pucks[TEN] is not None:
+                    randpuck = random.choice(self.pucks[TEN])
+                    self.shoot_angle = -np.arctan2(randpuck.x[1]-endgoal[1], randpuck.x[0]-endgoal[0])
                 self.moves.append(Move(pos=self.shoot_pos + np.array([0, 0, 0.2]), angle=self.shoot_angle))
                 self.moves.append(Drop(self.shoot_pos, angle=self.shoot_angle))
                 self.moves.append(Move(pos=self.shoot_pos + np.array([0, 0, 0.2]), angle=self.shoot_angle))
@@ -300,10 +319,15 @@ class BrainNode(Node):
                     self.focus = self.pucks[STRIKER][idx]
 
                     _, shoot_angle = None, 0.0 # SWITCH WITH PLAY ALGO(self.shoot_pos)
-                    self.moves.append(Move(pos=self.focus.x + np.array([0, 0, 0.2]), angle=self.shoot_angle))
-                    self.moves.append(Strike(self.focus.x, angle=self.shoot_angle))
+                    if self.pucks[TEN] is not None:
+                        randpuck = random.choice(self.pucks[TEN])
+                        self.shoot_angle = -np.arctan2(randpuck.x[1]-endgoal[1], randpuck.x[0]-endgoal[0])
+
+                    delta = 0.015 * np.array([np.cos(shoot_angle + np.pi), np.sin(shoot_angle + np.pi), 0])
+                    self.moves.append(Move(pos=self.focus.x + delta + np.array([0, 0, 0.2]), angle=self.shoot_angle))
+                    self.moves.append(Strike(self.focus.x + delta - np.array([0, 0, 0.03]), angle=self.shoot_angle))
                     self.moves.append(Wait(3.0))
-                    self.moves.append(Move(pos=self.focus.x + np.array([0, 0, 0.2]), angle=self.shoot_angle))
+                    self.moves.append(Move(pos=self.focus.x + delta + np.array([0, 0, 0.2]), angle=self.shoot_angle))
                     self.moves.append(Move(pos=self.HOME, angle=0))
 
             elif self.stage == Stage.RETURN:

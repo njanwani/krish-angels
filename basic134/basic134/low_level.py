@@ -37,11 +37,11 @@ class RobotPose:
         self.x = x
         self.theta = theta
         self.pitch = pitch
-        if R is None:
-            self.R = Reye() @ Roty(self.pitch) @ Rotz(self.theta)
+        if True or R is None:
+            self.R = Reye() #@ Roty(self.pitch) @ Rotz(self.theta)
 
     def recalcR(self):
-        self.R = Reye() @ Roty(self.pitch) @ Rotz(self.theta)
+        self.R = Reye() #@ Roty(self.pitch) @ Rotz(self.theta)
 
 class Filter:
     def __init__(self, T, x0):
@@ -174,8 +174,8 @@ class DemoNode(Node):
                                                      af=0)
 
     def recvpt(self, msg: Pose, gripping = False):
-        msg.position.y = msg.position.y #+ 0.026 - 0.005 * msg.position.y
-        msg.position.x = msg.position.x #- 0.002 - 0.03 * msg.position.y
+        msg.position.y = msg.position.y + 0.04 - 0.025 * msg.position.y
+        msg.position.x = msg.position.x + 0.01 # - 0.01 * (msg.position.y)
         msg.position.z = msg.position.z #+ 0.02 * msg.position.x
         # ros_print(self, msg.position.y)
         if np.all(self.TS['goal'].x == self.TS['p0'].x) and np.all(self.TS['goal'].R == self.TS['p0'].R):
@@ -186,7 +186,7 @@ class DemoNode(Node):
             # ros_print(self, f'{msg.position.x, msg.position.y}')
             return
         
-        R = Reye() @ Roty(msg.orientation.y) @ Rotz(msg.orientation.z)
+        R = Reye() #@ Roty(msg.orientation.y) @ Rotz(msg.orientation.z)
         
         if np.all(np.isclose(np.array([msg.position.x, msg.position.y, msg.position.z]), self.TS['goal'].x, atol=0.01)) \
            and np.all(np.isclose(R, self.TS['goal'].R, atol=0.01)) \
@@ -213,7 +213,7 @@ class DemoNode(Node):
             self.mode = Mode.TASK
             self.t0 = self.t
             self.grip_0 = self.grip_act
-            self.tmove = max(splinetime(self.TS['p0'].x, self.TS['goal'].x, v0=v_last, vf=0), int(gripping))
+            self.tmove = max(splinetime(self.TS['p0'].x, self.TS['goal'].x, v0=v_last, vf=0), 3 * int(gripping))
             self.s_last = 0
             self.TS['v0'] = v_last
             self.TS['a0'] = a_last
