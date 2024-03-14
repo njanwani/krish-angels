@@ -193,7 +193,7 @@ class DetectorNode(Node):
                 area_calc = bw*bh
                 accuracy = area / area_calc
                 # perimeter = cv2.arcLength(contour, True)  # Perimeter of first contour
-                ros_print(self, accuracy)
+                # ros_print(self, accuracy)
         
         if accuracy > 0.95:
             xyCenter = self.pixelToWorld(frame, rect[0][0], rect[0][1], self.x0, self.y0)

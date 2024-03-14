@@ -177,7 +177,7 @@ class DemoNode(Node):
         if not from_self:
             msg.position.y = msg.position.y + 0.045 - 0.065 * msg.position.y
             msg.position.x = msg.position.x + 0.01 - 0.021 * (msg.position.x) - 0.025 * (msg.position.y)
-            msg.position.z = msg.position.z + 0.01 * msg.position.x
+            msg.position.z = msg.position.z + 0.04 * msg.position.x
         # ros_print(self, msg.position.y)
         if np.all(self.TS['goal'].x == self.TS['p0'].x) and np.all(self.TS['goal'].R == self.TS['p0'].R):
             return

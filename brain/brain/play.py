@@ -37,11 +37,16 @@ STRIKER = 3
 ALL = 4
 
 EE_HEIGHT = 0.181 #0.193
-BOARD_HEIGHT = 0.09 #0.07
+BOARD_HEIGHT = 0.075 #0.07
 REST_HEIGHT = np.array([0,0,0.1])
 BOARD_WIDTH = 0.6874
 GRIPPER_WIDTH = 0.06
 PUCK_RADIUS = 0.015
+
+dist = {(0,1) : np.pi,
+        (1,3) : 3 * np.pi / 2,
+        (3,2) : 0,
+        (2,0) : np.pi / 2}
 
 ZONE_WIDTH = 0.1
 ZONE_ANGS = {}
@@ -66,12 +71,11 @@ class Puck:
 class BrainNode(Node):
     # Pick some colors, assuming RGB8 encoding.
     HOME = np.array([0.0, 0.52, 0.5])
-    CHECK = np.array([0.0, -0.52, 0.5])
-
     # Initialization.
     def __init__(self, name):
         # Initialize the node, naming it as specified
         super().__init__(name)
+        self.num_pucks = 20
         self.stage = Stage.GET
         self.turn = Turn.ROBOT
         self.pucks = {}
@@ -191,11 +195,73 @@ class BrainNode(Node):
             else:
                 if abs(minangle - np.pi) < abs(minangle):
                     minangle = minangle - np.pi
-                    
+
+            sides = [(0,1),
+                     (1,3),
+                     (3,2),
+                     (2,0)]
+           
+                
+            for pose1, pose2 in sides:
+                if self.board_corners is None:
+                    break
+                side = pose1, pose2
+                pose1 = self.board_corners[pose1]
+                pose2 = self.board_corners[pose2]
+                c1 = np.array([pose1.position.x, pose1.position.y])
+                c2 = np.array([pose2.position.x, pose2.position.y])
+                p = np.array([puck.x[0], puck.x[1]]) - c1
+                s = c2 - c1
+                theta = np.arccos(s @ p / (np.linalg.norm(p) * np.linalg.norm(s)))
+                d = np.abs(np.linalg.norm(p) * np.sin(theta))
+                ros_print(self, f'{side}: {d}')
+                if d < 0.1:
+                    minangle = dist[side]
+                    break
+
             puck.angle = minangle
             # ros_print(self, f'found angle {puck.angle}')
 
         self.updating_pucks = False
+
+    def pick_puck(self):
+        dmin, puckmin = np.inf, None
+        for puck in self.pucks[ALL]:
+            if puck.denom == STRIKER:
+                continue
+            ros_print(self, 'trying a puck')
+            temp_dmin = np.inf
+            for corner in self.board_corners:
+                d = np.array([puck.x[0], puck.x[1]]) - np.array([corner.position.x, corner.position.y])
+                if np.linalg.norm(d) < temp_dmin:
+                    temp_dmin = np.linalg.norm(d)
+
+            if temp_dmin < dmin:
+                dmin = temp_dmin
+                puckmin = puck
+        
+        return puckmin
+
+    def pick_shot_pos(self):
+        positions = np.linspace([self.shot_axis[0].position.x, self.shot_axis[0].position.y, BOARD_HEIGHT + EE_HEIGHT],
+                                [self.shot_axis[1].position.x, self.shot_axis[1].position.y, BOARD_HEIGHT + EE_HEIGHT],
+                                num=20)
+        ret = []
+        for pos in positions:
+            pos_ok = True
+            for puck in self.pucks[ALL]:
+                if puck.denom == STRIKER:
+                    continue
+                
+                p = puck.x[:2]
+                if np.linalg.norm(pos[:2] - p) < 0.07:
+                    pos_ok = False
+                    break
+            
+            if pos_ok:
+                ret.append(pos)
+        
+        return np.array(ret)
 
     def ready_cb(self, msg: Bool):
         self.ready = msg.data
@@ -288,7 +354,7 @@ class BrainNode(Node):
                 self.update_pucks()
                 self.shoot_pos, self.shoot_angle = np.array([0.4, 0.0, BOARD_HEIGHT + EE_HEIGHT]), 0.0 # SWITCH WITH PLAY ALGO
                 if self.shot_axis is not None:
-                    positions = np.linspace([self.shot_axis[0].position.x, self.shot_axis[0].position.y, BOARD_HEIGHT + EE_HEIGHT], [self.shot_axis[1].position.x, self.shot_axis[1].position.y, BOARD_HEIGHT + EE_HEIGHT], num=20)
+                    positions = self.pick_shot_pos()
                     self.shoot_pos = positions[np.random.choice(list(range(0, len(positions))))]
                     # ros_print(self, self.shot_axis)
                     # ros_print(self, self.shoot_pos + np.array([0, 0, 0.2]))
@@ -296,7 +362,8 @@ class BrainNode(Node):
                 pucks = self.pucks[TEN] + self.pucks[TWENTY] + self.pucks[QUEEN]
                 ros_print(self, len(pucks))
                 if pucks is not None or pucks is not []:
-                    randpuck = random.choice(pucks)
+                    # randpuck = random.choice(pucks)
+                    randpuck = self.pick_puck()
                     self.shoot_angle = -np.arctan2(randpuck.x[1]-self.shoot_pos[1], randpuck.x[0]-self.shoot_pos[0])
                 ros_print(self, self.shoot_angle)
                 self.moves.append(Move(pos=self.shoot_pos + REST_HEIGHT, angle=self.shoot_angle))

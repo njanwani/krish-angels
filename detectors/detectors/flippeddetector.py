@@ -57,6 +57,8 @@ class DetectorNode(Node):
         # publishers
         self.im_pub = self.create_publisher(Image, name + '/binary/' + 'flipped', 3)
         self.im_raw_pub = self.create_publisher(Image, name + '/raw_image', 3)
+        self.pub = self.create_publisher(PoseArray, '/' + name + '/pucks', 3)
+
         # self.board_pub = self.create_publisher(Pose, name + '/pose', 3)
         # self.board_corner_pub = self.create_publisher(PoseArray, name + '/board_corners', 3)
         # self.shot_axis_pub = self.create_publisher(PoseArray, name + '/shot_axis', 3)
@@ -89,7 +91,6 @@ class DetectorNode(Node):
 
     # Process the image (detect the ball).
     def process(self, msg):
-        
         # Confirm the encoding and report.
         assert(msg.encoding == "rgb8")
 
@@ -185,10 +186,28 @@ class DetectorNode(Node):
                     # ros_print(self, area)
                     cv2.drawContours(frame, [contour], -1,(0,191,255),2)
                     
+                    ((ur, vr), radius) = cv2.minEnclosingCircle(contour)
+                    x,y,w,h = cv2.boundingRect(contour) 
+                    ur     = int(ur)
+                    vr     = int(vr)
+                    radius = int(radius)
 
+                    xyCenter = self.pixelToWorld(frame, ur, vr, None, None, annotateImage=False)
+                    if xyCenter is None:
+                        break
+                    (xc, yc) = xyCenter
+                    pose = Pose()
+                    pose.position.x = float(xc)
+                    pose.position.y = float(yc)
+                    poses.append(pose)
                 # if dist > 0.0:
                 #     cv2.drawContours(frame,[contour],0,(0,191,255),2)
+                    
             self.im_raw_pub.publish(self.bridge.cv2_to_imgmsg(frame, "rgb8"))
+
+            posearray_msg = PoseArray()
+            posearray_msg.poses = poses
+            self.pub.publish(posearray_msg)
         
 
     def get_accuracy(self, contour):
