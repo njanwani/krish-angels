@@ -45,6 +45,7 @@ class DemoNode(Node):
     def send_data(self, toSend):
         self.get_logger().info("Sending message: " + toSend)
         self.ser.write(bytes(toSend, 'utf-8'))
+        #self.ser.write(bytes("255", 'utf-8'))
         startTime = time.time()
         while time.time() - startTime < 0.1:
             pass

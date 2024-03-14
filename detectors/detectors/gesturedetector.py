@@ -104,7 +104,7 @@ class DemoNode(Node):
         else: self.successes = 0
 
         msg = Bool()
-        msg.data = self.successes >= 10
+        msg.data = self.successes >= 1
         self.successpub.publish(msg)
         # Convert the image back into a ROS image and republish.
         self.pubrgb.publish(self.bridge.cv2_to_imgmsg(imgRGB, "rgb8"))

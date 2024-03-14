@@ -27,9 +27,6 @@ from std_msgs.msg import ColorRGBA
 FPS = 15.0
 
 RGB_TOPIC = '/raw_image'
-BOARD = 'Board'
-
-STORAGE_LEN = 15
 
 def ros_print(node, msg: str):
     """
@@ -54,25 +51,19 @@ class DetectorNode(Node):
         super().__init__(name)
 
         # Thresholds in Hmin/max, Smin/max, Vmin/max
-        self.hsv_thresh = np.array([[96, 124], [18, 57], [33, 101]]) # border
-        # self.hsv_thresh = np.array([[10, 28], [21, 71], [0, 206]])
+        # self.hsv_thresh = np.array([[96, 124], [18, 57], [33, 101]]) # border
+        self.hsv_thresh = np.array([[0, 179], [0, 99], [0, 106]])
 
         # publishers
-        self.im_pub = self.create_publisher(Image, name + '/binary/' + BOARD, 3)
+        self.im_pub = self.create_publisher(Image, name + '/binary/' + 'flipped', 3)
         self.im_raw_pub = self.create_publisher(Image, name + '/raw_image', 3)
-        self.board_pub = self.create_publisher(Pose, name + '/pose', 3)
-        self.board_corner_pub = self.create_publisher(PoseArray, name + '/board_corners', 3)
-        self.shot_axis_pub = self.create_publisher(PoseArray, name + '/shot_axis', 3)
+        # self.board_pub = self.create_publisher(Pose, name + '/pose', 3)
+        # self.board_corner_pub = self.create_publisher(PoseArray, name + '/board_corners', 3)
+        # self.shot_axis_pub = self.create_publisher(PoseArray, name + '/shot_axis', 3)
 
         # eroding and dilating
         #self.filter = lambda b: cv2.erode(cv2.dilate(b, None, iterations=2), None, iterations=3)
-        self.filter = lambda b: cv2.dilate(cv2.erode(cv2.dilate(b, None, iterations=2), None, iterations=9), None, iterations=7)
-        self.filter2 = lambda b: cv2.dilate(cv2.erode(b, None, iterations=0), None, iterations=2)
-
-        self.last_bins = []
-        for i in range(STORAGE_LEN):
-            self.last_bins.append(None)
-        self.last = time.time()
+        self.filter = lambda b: cv2.dilate(cv2.erode(b, None, iterations=2), None, iterations=1)
         
         # Set up the OpenCV bridge.
         self.bridge = cv_bridge.CvBridge()
@@ -98,9 +89,7 @@ class DetectorNode(Node):
 
     # Process the image (detect the ball).
     def process(self, msg):
-        if time.time() - self.last <= 1.0:
-            return
-        self.last = time.time()
+        
         # Confirm the encoding and report.
         assert(msg.encoding == "rgb8")
 
@@ -119,114 +108,88 @@ class DetectorNode(Node):
         # poses_coords = []
 
         binary = cv2.inRange(hsv, self.hsv_thresh[:,0], self.hsv_thresh[:,1])
-        binary = self.filter2(binary)
+        binary = self.filter(binary)
 
         
-        (contours, hierarchy) = cv2.findContours(binary, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
+        (contours, hierarchy) = cv2.findContours(binary, cv2.RETR_TREE, cv2.CHAIN_APPROX_SIMPLE)
+
+        
+        # ros_print(self, hierarchy)
         self.im_pub.publish(self.bridge.cv2_to_imgmsg(binary, "mono8"))
         accuracy = 0
         if len(contours) > 0:
-            #contour = max(contours, key=cv2.contourArea)
-            contours = list(contours)
-            contours.sort(reverse=True, key=cv2.contourArea)
-            contours = contours[:1] # select largest contour only --> the board
-            #area = cv2.contourArea(contour)
             for contour in contours:
-                if cv2.contourArea(contour) < 0:
-                    self.die(frame)
-
-                rect = cv2.minAreaRect(contour)
-                (x,y), (bw,bh), theta = rect
-                box = cv2.boxPoints(rect) 
-                box = np.int0(box) 
-                frame = cv2.drawContours(frame, [box], 0, (0, 0, 255), 2)
-                x_sort = box.tolist()
-                x_sort.sort(key=lambda x: x[0])
-                x_small = x_sort[:2]
-                x_large = x_sort[2:]
-                x_small.sort(key=lambda x: x[1])
-                x_large.sort(key=lambda x: x[1])
-                # ros_print(self, x_small)
-                box_sorted = [None] * 4
-                box_sorted[0] = x_small[0]
-                box_sorted[1] = x_small[1]
-                box_sorted[2] = x_large[0]
-                box_sorted[3] = x_large[1]
-                _sort = list(box).sort(key=lambda x: x[0])
-                for idx, pt in enumerate(box_sorted):
-                    cv2.putText(frame, str(idx), pt, cv2.FONT_HERSHEY_SIMPLEX,
-                        0.5, (255, 0, 0), 2, cv2.LINE_AA)
-                theta = np.arctan2(box_sorted[1][1] - box_sorted[0][1], box_sorted[1][0] - box_sorted[0][0])
                 
-                w, h = (95, 70)
-                p1 = np.array([w * np.cos(theta), w * np.sin(theta)])
-                p2 = np.array([h * np.cos(theta - np.pi / 2), h * np.sin(theta - np.pi / 2)])
-                v1 = tuple((np.array(box_sorted[0]) + p1 + p2).astype(int))
-                cv2.circle(frame, v1, 5, (255, 0, 255), -1)
+                area = cv2.contourArea(contour)
+                if area <= 0:
+                    continue
+                perimeter = cv2.arcLength(contour, True)
+                r = perimeter / (2 * np.pi)
+                # r = (area / np.pi)**0.5
+                accuracy = np.pi * r**2 / area
+                if np.isclose(accuracy, 1.0, atol=0.7) and np.isclose(area, 100, atol=75):
+                    # ros_print(self, area)
+                    # cv2.drawContours(frame, [contour], -1,(0,191,255),2)
+                    pass
+            
 
-                p1 = np.array([-w * np.cos(theta),- w * np.sin(theta)])
-                p2 = np.array([h * np.cos(theta - np.pi / 2), h * np.sin(theta - np.pi / 2)])
-                v2 = tuple((np.array(box_sorted[1]) + p1 + p2).astype(int))
-                cv2.circle(frame, v2, 5, (255, 0, 255), -1)
+            #contour = max(contours, key=cv2.contourArea)
+            areas = [cv2.contourArea(contour) for contour in contours]
+            # ros_print(self, areas)
+            idx_max = np.argmax(areas)
+            # ros_print(self, idx_max)
+            # ros_print(self, len(hierarchy[0]))
 
-                xyShot1 = self.pixelToWorld(frame, v1[0], v1[1], self.x0, self.y0)
-                if xyShot1 is None:
-                    self.die(frame)
-                    return
-                shot1 = Pose()
-                shot1.position.x = float(xyShot1[0])
-                shot1.position.y = float(xyShot1[1])
+            board = contours[idx_max]
+            if cv2.contourArea(board) < 0:
+                self.die(frame)
 
-                xyShot2 = self.pixelToWorld(frame, v2[0], v2[1], self.x0, self.y0)
-                if xyShot2 is None:
-                    self.die(frame)
-                    return
-                shot2 = Pose()
-                shot2.position.x = float(xyShot2[0])
-                shot2.position.y = float(xyShot2[1])
+            rect = cv2.minAreaRect(board)
+            (x,y), (bw,bh), theta = rect
+            box = cv2.boxPoints(rect) 
+            box = np.int0(box) 
+            frame = cv2.drawContours(frame, [box], 0, (0, 0, 255), 2)
 
-                shots = PoseArray()
-                shots.poses = [shot1, shot2]
-                self.shot_axis_pub.publish(shots)
+            area = cv2.contourArea(board)
+            area_calc = bw*bh
+            accuracy = area / area_calc
+            # perimeter = cv2.arcLength(contour, True)  # Perimeter of first contour
+            # ros_print(self, accuracy)
+    
+        if accuracy > 0.0:
+            pass
+            # Plot child contours for the largest contour
+            # child_contours = []
+            # if idx_max != -1:
+            #     child_index = hierarchy[0][idx_max][2]
+            #     while child_index != -1:
+            #         child_contours.append(contours[child_index])
+            #         child_index = hierarchy[0][child_index][0]
+            #     cv2.drawContours(frame, child_contours, -1, (255, 0, 0), 2)
+            # for idx in hierarchy[0][idx_max]:
+            #     # cv2.drawContours(frame, hierarchy[idx_max], -1,(0,191,255),2)
+            #     cv2.drawContours(frame,[contours[idx]],0,(0,191,255),-1)
+
+            for contour in contours:
+                board = board[:,0,:].reshape((-1,1,2))
+                dist = cv2.pointPolygonTest(board[:,0,:].astype(int), contour[0][0].astype(float), False)
 
                 area = cv2.contourArea(contour)
-                area_calc = bw*bh
-                accuracy = area / area_calc
-                # perimeter = cv2.arcLength(contour, True)  # Perimeter of first contour
-                ros_print(self, accuracy)
-        
-        if accuracy > 0.95:
-            xyCenter = self.pixelToWorld(frame, rect[0][0], rect[0][1], self.x0, self.y0)
-            self.im_raw_pub.publish(self.bridge.cv2_to_imgmsg(frame, "rgb8"))
-            if xyCenter is None:
-                self.die(frame)
-                return
-            (xc, yc) = xyCenter
-            board_pose = Pose()
-            # board_pose.position.x = rect[0][0]
-            # board_pose.position.y = rect[0][1]
-            board_pose.position.x = float(xc)
-            board_pose.position.y = float(yc)
-            board_pose.position.z = 0.0
-            self.board_pub.publish(board_pose)
+                if area <= 0:
+                    continue
+                perimeter = cv2.arcLength(contour, True)
+                r = perimeter / (2 * np.pi)
+                # r = (area / np.pi)**0.5
+                accuracy = np.pi * r**2 / area
+                if dist > 0.0 and np.isclose(accuracy, 1.0, atol=0.7) and np.isclose(area, 100, atol=25):
+                    # ros_print(self, area)
+                    cv2.drawContours(frame, [contour], -1,(0,191,255),2)
+                    
 
-            for i in range(len(box_sorted)):
-                cx = box_sorted[i][0]
-                cy = box_sorted[i][1]
-                xyCorner = self.pixelToWorld(frame, cx, cy, self.x0, self.y0)
-                if xyCorner is None:
-                    self.die(frame)
-                    return
-                (xco, yco) = xyCorner
-                pose = Pose()
-                pose.position.x = float(xco)
-                pose.position.y = float(yco)
-                poses.append(pose)
-            posearray_msg.poses = poses
-            self.board_corner_pub.publish(posearray_msg)
-            self.last_bins.append(binary)
-            self.last_bins = self.last_bins[1:]
-            
+                # if dist > 0.0:
+                #     cv2.drawContours(frame,[contour],0,(0,191,255),2)
+            self.im_raw_pub.publish(self.bridge.cv2_to_imgmsg(frame, "rgb8"))
+        
 
     def get_accuracy(self, contour):
         rect = cv2.minAreaRect(contour)
@@ -327,7 +290,7 @@ def main(args=None):
     rclpy.init(args=args)
 
     # Instantiate the detector node.
-    node = DetectorNode('boarddetector')
+    node = DetectorNode('flippeddetector')
 
     # Spin the node until interrupted.
     rclpy.spin(node)

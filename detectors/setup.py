@@ -34,7 +34,8 @@ setup(
             'writearuco    = detectors.writearuco:main',
             'webserver    = detectors.webserver:main',
             'boarddetector    = detectors.boarddetector:main',
-            'gesturedetector    = detectors.gesturedetector:main'
+            'gesturedetector    = detectors.gesturedetector:main',
+            'flippeddetector    = detectors.flippeddetector:main'
         ],
     },
 )

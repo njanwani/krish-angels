@@ -158,7 +158,7 @@ class DemoNode(Node):
             pose.position.z = float(self.TS['goal'].x[2] + offset_z)
             pose.orientation.z = float(self.TS['goal'].theta)
 
-            self.recvpt(pose, gripping=True)
+            self.recvpt(pose, gripping=True, from_self=True)
 
 
 
@@ -173,16 +173,17 @@ class DemoNode(Node):
                                                      a0=self.sdotdot_last,
                                                      af=0)
 
-    def recvpt(self, msg: Pose, gripping = False):
-        msg.position.y = msg.position.y + 0.04 - 0.025 * msg.position.y
-        msg.position.x = msg.position.x + 0.01 # - 0.01 * (msg.position.y)
-        msg.position.z = msg.position.z #+ 0.02 * msg.position.x
+    def recvpt(self, msg: Pose, gripping = False, from_self=False):
+        if not from_self:
+            msg.position.y = msg.position.y + 0.045 - 0.065 * msg.position.y
+            msg.position.x = msg.position.x + 0.01 - 0.021 * (msg.position.x) - 0.025 * (msg.position.y)
+            msg.position.z = msg.position.z + 0.01 * msg.position.x
         # ros_print(self, msg.position.y)
         if np.all(self.TS['goal'].x == self.TS['p0'].x) and np.all(self.TS['goal'].R == self.TS['p0'].R):
             return
 
-        reach = (msg.position.x**2 + msg.position.y**2)**0.5
-        if reach < 0.1 or reach > 0.7 or msg.position.z < 0.0 or msg.position.z > 0.51:
+        reach = (msg.position.x**2 + msg.position.y**2 + msg.position.z**2)**0.5
+        if reach < 0.1 or reach > 0.95 or msg.position.z < 0.0 or msg.position.z > 0.51:
             # ros_print(self, f'{msg.position.x, msg.position.y}')
             return
         
@@ -195,10 +196,11 @@ class DemoNode(Node):
         self.armed = False
         # ros_print(self, 'RE_SPLINE')
         v_last, a_last = 0,0
-        if self.mode == Mode.TASK:
+        if False and self.mode == Mode.TASK:
             _, v_last, a_last = spline5(self.t - self.t0, self.tmove, self.TS['p0'].x.flatten(), self.TS['goal'].x.flatten(), self.TS['v0'],0, self.TS['a0'], 0)
             v_last, a_last = v_last.flatten(), a_last.flatten()
-            
+        
+        # ros_print(self, f'changing y to {msg.position.y}')
         self.TS['goal'].x = np.array([msg.position.x,
                                       msg.position.y,
                                       msg.position.z])
@@ -217,9 +219,15 @@ class DemoNode(Node):
             self.s_last = 0
             self.TS['v0'] = v_last
             self.TS['a0'] = a_last
-    
+        
+
     # Save the actual position.
     def cb_states(self, msg: JointState):
+        '''
+        curr_grip = msg.position[-1]
+        if np.isclose(curr_grip, self.grip_act, 0.01):
+            self.grip_converged = True
+        '''
         self.grip_act = msg.position[-1]
         self.JS['q_act'] = np.array(msg.position)[:-1]
         if self.mode == Mode.START:
@@ -276,7 +284,7 @@ class DemoNode(Node):
 
     # Send a command - called repeatedly by the timer.
     def sendcmd(self):
-        # ros_print(self, self.mode)
+        # ros_print(self, self.TS['goal'].x)
         if self.tlast is None:
             self.tlast = time.time() - 1 / RATE
         dt = time.time() - self.tlast
@@ -324,6 +332,8 @@ class DemoNode(Node):
         
         else:
             raise Exception('OOPS')
+        
+        
         
         self.JS['q_last'] = q[:-1]
         self.JS['qd_last'] = qdot[:-1]
