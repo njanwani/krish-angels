@@ -15,11 +15,13 @@ from rclpy.node         import Node
 from sensor_msgs.msg    import Image
 from geometry_msgs.msg  import Point, Pose, PoseArray, Vector3
 from nav_msgs.msg       import Odometry
+from sensor_msgs.msg    import JointState
 from visualization_msgs.msg import Marker, MarkerArray
 from std_msgs.msg import ColorRGBA, Bool, Float32
 
 RATE = 1.0  
 class Stage(Enum):
+    RESET = 0
     GET = 1
     PUT = 2
     SHOOT = 3
@@ -34,7 +36,8 @@ TEN = 0
 TWENTY = 1
 QUEEN = 2
 STRIKER = 3
-ALL = 4
+FLIPPED = 4
+ALL = 5
 
 EE_HEIGHT = 0.181 #0.193
 BOARD_HEIGHT = 0.075 #0.07
@@ -83,10 +86,13 @@ class BrainNode(Node):
         self.pucks[TWENTY] = []
         self.pucks[QUEEN] = []
         self.pucks[STRIKER] = []
+        self.pucks[FLIPPED] = []
         self.puckarray = []
         self.updating_pucks = False
+        self.flipped = False
 
         self.focus = None
+        self.dropped = False
         self.ready = False
         self.ready_update = False
         self.armed = False
@@ -96,12 +102,7 @@ class BrainNode(Node):
         self.board_center = None
         self.board_corners = None
         self.shot_axis = None
-        # # check y
-        # self.zoneA = lambda center: ([center.x - BOARD_WIDTH / 2 + ZONE_WIDTH, center.y - BOARD_WIDTH / 2 + ZONE_WIDTH])
-        # self.zoneC = [BOARD_WIDTH/2 - ZONE_WIDTH, BOARD_WIDTH/2]
-        # # check x
-        # self.zoneB = [-BOARD_WIDTH/2, -BOARD_WIDTH/2 + ZONE_WIDTH]
-        # self.zoneD = [BOARD_WIDTH/2 - ZONE_WIDTH, BOARD_WIDTH/2]
+
         self.thumbs_up = False
         self.puck_sub = self.create_subscription(PoseArray, '/puckdetector/pucks', self.puck_cb, 10)
         self.ready_sub = self.create_subscription(Bool, '/low_level/ready', self.ready_cb, 1)
@@ -110,6 +111,7 @@ class BrainNode(Node):
         self.board_corners_sub = self.create_subscription(PoseArray, '/boarddetector/board_corners', self.board_corners_cb, 1)
         self.shot_axis_sub = self.create_subscription(PoseArray, '/boarddetector/shot_axis', self.shot_axis_cb, 1)
         self.thumbs_up_sub = self.create_subscription(Bool, '/gesture/thumbs', self.thumbs_up_cb, 1)
+        self.fbksub = self.create_subscription(JointState, '/joint_states', self.cb_states, 10)
 
         self.goal_pub = self.create_publisher(Pose, '/low_level/goal_2', 10)
         self.grip_pub = self.create_publisher(Bool, '/low_level/grip', 10)
@@ -124,6 +126,10 @@ class BrainNode(Node):
         rate       = 10.0
         self.timer = self.create_timer(1 / rate, self.work)
         ros_print(self, 'STARTED PLAY')
+
+    def cb_states(self, msg: JointState):
+        gripper = msg.position[-1]
+        self.dropped = gripper < -0.6
 
     def puck_cb(self, msg: PoseArray):
         while self.updating_pucks:
@@ -146,6 +152,7 @@ class BrainNode(Node):
         self.pucks[TWENTY] = []
         self.pucks[QUEEN] = []
         self.pucks[STRIKER] = []
+        self.pucks[FLIPPED] = []
         self.pucks[ALL] = []
         while self.updating_pucks:
             pass
@@ -200,7 +207,6 @@ class BrainNode(Node):
                      (1,3),
                      (3,2),
                      (2,0)]
-           
                 
             for pose1, pose2 in sides:
                 if self.board_corners is None:
@@ -214,14 +220,14 @@ class BrainNode(Node):
                 s = c2 - c1
                 theta = np.arccos(s @ p / (np.linalg.norm(p) * np.linalg.norm(s)))
                 d = np.abs(np.linalg.norm(p) * np.sin(theta))
-                ros_print(self, f'{side}: {d}')
+                # ros_print(self, f'{side}: {d}')
                 if d < 0.1:
                     minangle = dist[side]
                     break
 
             puck.angle = minangle
             # ros_print(self, f'found angle {puck.angle}')
-
+        self.flipped = len(self.pucks[FLIPPED]) > 0
         self.updating_pucks = False
 
     def pick_puck(self):
@@ -285,14 +291,22 @@ class BrainNode(Node):
         self.shot_axis = msg.poses
 
     def transit_stage(self):
+        ros_print(self, 'transitting,.....')
         if self.stage == Stage.GET: self.stage = Stage.PUT
         elif self.stage == Stage.PUT: self.stage = Stage.SHOOT
         elif self.stage == Stage.SHOOT: self.stage = Stage.RETURN
+        elif self.stage == Stage.RESET: self.stage = Stage.GET
         else: raise Exception('Unknown stage encountered')
 
     def work(self):
         self.t = time.time()
         if self.moves == []:
+            return
+        
+        if self.dropped and self.stage != Stage.RESET:
+            ros_print(self, 'RESETTING')
+            self.stage = Stage.RESET
+            self.moves = []
             return
         
         # if not self.armed_update or not self.ready_update:
@@ -329,14 +343,42 @@ class BrainNode(Node):
         if self.moves[0].done:
             ros_print(self, 'MOVING ON')
             self.moves.pop(0)
+            ros_print(self, self.moves)
             if self.moves == []:
                 self.focus = None
                 self.transit_stage()
                 self.update_pucks()
 
     def think(self):
-        # ros_print(self, self.stage)
+        ros_print(self, f'{self.stage}, {self.dropped}')
         if self.turn == Turn.ROBOT:
+            # if self.flipped:
+            #     # move to nearest wall
+            #     for puck in self.pucks[FLIPPED]:
+            #         ros_print(self, 'stuck in flipped')
+            #         sides = [(0,1),
+            #                  (1,3),
+            #                  (3,2),
+            #                  (2,0)]
+            #         xmin, ymin = self.board_corners[1].position.x, self.board_corners[1].position.y
+            #         xmax, ymax = self.board_corners[2].position.x, self.board_corners[2].position.y
+            #         limits = np.array([xmin, xmax, ymin, ymax])
+            #         closest = np.argmin(limits - np.array([puck.x[0], puck.x[0], puck.x[1], puck.x[1]]))
+            #         ros_print(self, f'closest {closest}')
+            #         if closest in [0, 1]:
+            #             # move to closest 
+            #             ros_print(self, 'added closest 0, 1')
+            #             closest_pos = np.array([limits[closest], puck.x[1], 0.0])
+            #             self.moves.append(Grab(pos=closest_pos + REST_HEIGHT, angle=dist[sides[closest]]))
+            #             self.moves.append(Drop(closest_pos + REST_HEIGHT, angle=dist[sides[closest]]))
+            #             ros_print(self, self.moves)
+            #         else:
+            #             ros_print(self, 'added closest 2, 3')
+            #             closest_pos = np.array([puck.x[0], limits[closest], 0.0])
+            #             self.moves.append(Grab(pos=closest_pos + REST_HEIGHT, angle=dist[sides[closest]]))
+            #             self.moves.append(Drop(closest_pos + REST_HEIGHT, angle=dist[sides[closest]]))
+            #             ros_print(self, self.moves)
+            #         self.flipped = False
             if self.stage == Stage.GET and self.moves == []:
                 self.update_pucks()
 
@@ -377,7 +419,7 @@ class BrainNode(Node):
                     idx = np.random.choice(np.arange(len(self.pucks[STRIKER])))
                     self.focus = self.pucks[STRIKER][idx]
 
-                    pucks = self.pucks[TEN] + self.pucks[TWENTY] + self.pucks[QUEEN]
+                    pucks = self.pucks[TEN] + self.pucks[TWENTY] + self.pucks[QUEEN] + self.pucks[FLIPPED]
                     if pucks is not None or pucks is not []:
                         randpuck = random.choice(pucks)
                         self.shoot_angle = np.arctan2(randpuck.x[1]-self.focus.x[1], randpuck.x[0]-self.focus.x[0])
@@ -395,6 +437,10 @@ class BrainNode(Node):
 
             elif self.stage == Stage.RETURN:
                 self.turn = Turn.PLAYER
+            elif self.stage == Stage.RESET and self.moves == []:
+                self.update_pucks()
+                self.moves.append(Drop(self.HOME, angle=0.0))
+                # self.moves.append(Wait(3.0))
             elif self.stage not in Stage:
                 raise Exception(f'Unknown Stage encountered: {self.stage}')
 

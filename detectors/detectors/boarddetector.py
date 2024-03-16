@@ -54,8 +54,8 @@ class DetectorNode(Node):
         super().__init__(name)
 
         # Thresholds in Hmin/max, Smin/max, Vmin/max
-        self.hsv_thresh = np.array([[96, 124], [18, 57], [33, 101]]) # border
-        # self.hsv_thresh = np.array([[10, 28], [21, 71], [0, 206]])
+        # self.hsv_thresh = np.array([[96, 124], [18, 57], [33, 101]]) # border
+        self.hsv_thresh = np.array([[10, 28], [21, 71], [0, 206]])
 
         # publishers
         self.im_pub = self.create_publisher(Image, name + '/binary/' + BOARD, 3)
@@ -67,7 +67,7 @@ class DetectorNode(Node):
         # eroding and dilating
         #self.filter = lambda b: cv2.erode(cv2.dilate(b, None, iterations=2), None, iterations=3)
         self.filter = lambda b: cv2.dilate(cv2.erode(cv2.dilate(b, None, iterations=2), None, iterations=9), None, iterations=7)
-        self.filter2 = lambda b: cv2.dilate(cv2.erode(b, None, iterations=0), None, iterations=2)
+        self.filter2 = lambda b: cv2.dilate(cv2.erode(b, None, iterations=0), None, iterations=0)
 
         self.last_bins = []
         for i in range(STORAGE_LEN):
@@ -127,75 +127,77 @@ class DetectorNode(Node):
         accuracy = 0
         if len(contours) > 0:
             #contour = max(contours, key=cv2.contourArea)
-            contours = list(contours)
-            contours.sort(reverse=True, key=cv2.contourArea)
-            contours = contours[:1] # select largest contour only --> the board
+            accs = [self.get_accuracy(contour) for contour in contours]
+            idx = np.argmax(accs)
+            # ros_print(self, accs[idx])
+            contour = contours[idx]
+            # contours.sort(reverse=True, key=self.get_accuracy)
             #area = cv2.contourArea(contour)
-            for contour in contours:
-                if cv2.contourArea(contour) < 0:
-                    self.die(frame)
+            if cv2.contourArea(contour) < 0:
+                self.die(frame)
 
-                rect = cv2.minAreaRect(contour)
-                (x,y), (bw,bh), theta = rect
-                box = cv2.boxPoints(rect) 
-                box = np.int0(box) 
-                frame = cv2.drawContours(frame, [box], 0, (0, 0, 255), 2)
-                x_sort = box.tolist()
-                x_sort.sort(key=lambda x: x[0])
-                x_small = x_sort[:2]
-                x_large = x_sort[2:]
-                x_small.sort(key=lambda x: x[1])
-                x_large.sort(key=lambda x: x[1])
-                # ros_print(self, x_small)
-                box_sorted = [None] * 4
-                box_sorted[0] = x_small[0]
-                box_sorted[1] = x_small[1]
-                box_sorted[2] = x_large[0]
-                box_sorted[3] = x_large[1]
-                _sort = list(box).sort(key=lambda x: x[0])
-                for idx, pt in enumerate(box_sorted):
-                    cv2.putText(frame, str(idx), pt, cv2.FONT_HERSHEY_SIMPLEX,
-                        0.5, (255, 0, 0), 2, cv2.LINE_AA)
-                theta = np.arctan2(box_sorted[1][1] - box_sorted[0][1], box_sorted[1][0] - box_sorted[0][0])
-                
-                w, h = (95, 70)
-                p1 = np.array([w * np.cos(theta), w * np.sin(theta)])
-                p2 = np.array([h * np.cos(theta - np.pi / 2), h * np.sin(theta - np.pi / 2)])
-                v1 = tuple((np.array(box_sorted[0]) + p1 + p2).astype(int))
-                cv2.circle(frame, v1, 5, (255, 0, 255), -1)
+            rect = cv2.minAreaRect(contour)
+            (x,y), (bw,bh), theta = rect
+            box = cv2.boxPoints(rect) 
+            box = np.int0(box) 
+            frame = cv2.drawContours(frame, [box], 0, (0, 0, 255), 2)
+            x_sort = box.tolist()
+            x_sort.sort(key=lambda x: x[0])
+            x_small = x_sort[:2]
+            x_large = x_sort[2:]
+            x_small.sort(key=lambda x: x[1])
+            x_large.sort(key=lambda x: x[1])
+            # ros_print(self, x_small)
+            box_sorted = [None] * 4
+            box_sorted[0] = x_small[0]
+            box_sorted[1] = x_small[1]
+            box_sorted[2] = x_large[0]
+            box_sorted[3] = x_large[1]
+            _sort = list(box).sort(key=lambda x: x[0])
+            for idx, pt in enumerate(box_sorted):
+                cv2.putText(frame, str(idx), pt, cv2.FONT_HERSHEY_SIMPLEX,
+                    0.5, (255, 0, 0), 2, cv2.LINE_AA)
+            theta = np.arctan2(box_sorted[1][1] - box_sorted[0][1], box_sorted[1][0] - box_sorted[0][0])
+            
+            w, h = (95, 70)
+            p1 = np.array([w * np.cos(theta), w * np.sin(theta)])
+            p2 = np.array([h * np.cos(theta - np.pi / 2), h * np.sin(theta - np.pi / 2)])
+            v1 = tuple((np.array(box_sorted[0]) + p1 + p2).astype(int))
+            cv2.circle(frame, v1, 5, (255, 0, 255), -1)
 
-                p1 = np.array([-w * np.cos(theta),- w * np.sin(theta)])
-                p2 = np.array([h * np.cos(theta - np.pi / 2), h * np.sin(theta - np.pi / 2)])
-                v2 = tuple((np.array(box_sorted[1]) + p1 + p2).astype(int))
-                cv2.circle(frame, v2, 5, (255, 0, 255), -1)
+            p1 = np.array([-w * np.cos(theta),- w * np.sin(theta)])
+            p2 = np.array([h * np.cos(theta - np.pi / 2), h * np.sin(theta - np.pi / 2)])
+            v2 = tuple((np.array(box_sorted[1]) + p1 + p2).astype(int))
+            cv2.circle(frame, v2, 5, (255, 0, 255), -1)
 
-                xyShot1 = self.pixelToWorld(frame, v1[0], v1[1], self.x0, self.y0)
-                if xyShot1 is None:
-                    self.die(frame)
-                    return
-                shot1 = Pose()
-                shot1.position.x = float(xyShot1[0])
-                shot1.position.y = float(xyShot1[1])
+            xyShot1 = self.pixelToWorld(frame, v1[0], v1[1], self.x0, self.y0)
+            if xyShot1 is None:
+                self.die(frame)
+                return
+            shot1 = Pose()
+            shot1.position.x = float(xyShot1[0])
+            shot1.position.y = float(xyShot1[1])
 
-                xyShot2 = self.pixelToWorld(frame, v2[0], v2[1], self.x0, self.y0)
-                if xyShot2 is None:
-                    self.die(frame)
-                    return
-                shot2 = Pose()
-                shot2.position.x = float(xyShot2[0])
-                shot2.position.y = float(xyShot2[1])
+            xyShot2 = self.pixelToWorld(frame, v2[0], v2[1], self.x0, self.y0)
+            if xyShot2 is None:
+                self.die(frame)
+                return
+            shot2 = Pose()
+            shot2.position.x = float(xyShot2[0])
+            shot2.position.y = float(xyShot2[1])
 
-                shots = PoseArray()
-                shots.poses = [shot1, shot2]
-                self.shot_axis_pub.publish(shots)
+            shots = PoseArray()
+            shots.poses = [shot1, shot2]
+            self.shot_axis_pub.publish(shots)
 
-                area = cv2.contourArea(contour)
-                area_calc = bw*bh
-                accuracy = area / area_calc
-                # perimeter = cv2.arcLength(contour, True)  # Perimeter of first contour
-                # ros_print(self, accuracy)
+            area = cv2.contourArea(contour)
+            # ros_print(self, area)
+            area_calc = bw*bh
+            accuracy = area / area_calc
+            # perimeter = cv2.arcLength(contour, True)  # Perimeter of first contour
+            # ros_print(self, accuracy)
         
-        if accuracy > 0.95:
+        if accuracy > 0.07:
             xyCenter = self.pixelToWorld(frame, rect[0][0], rect[0][1], self.x0, self.y0)
             self.im_raw_pub.publish(self.bridge.cv2_to_imgmsg(frame, "rgb8"))
             if xyCenter is None:
@@ -231,12 +233,15 @@ class DetectorNode(Node):
     def get_accuracy(self, contour):
         rect = cv2.minAreaRect(contour)
         (x,y), (bw,bh), theta = rect
+        if bw == 0 or bh == 0:
+            return -np.inf
         area = cv2.contourArea(contour)
+        if area < 4000:
+            return -np.inf
         area_calc = bw*bh
         accuracy = area / area_calc
-        if area < 10_000:
-            accuracy = -np.inf
-        return -np.linalg.norm(area - 74_000)
+        # ros_print(self, accuracy)
+        return -np.abs(1 - accuracy)
 
     def die(self, frame):
         # self.im_raw_pub.publish(self.bridge.cv2_to_imgmsg(frame, "rgb8"))

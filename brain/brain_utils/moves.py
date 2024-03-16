@@ -36,7 +36,7 @@ class Grab:
             if self.angle is None:
                 self.angle = np.arctan2(self.pos[1], self.pos[0])
             goal[1] = self.angle
-            goal[2] = 0
+            goal[2] = np.pi / 3
             grip = False
         elif self.mode == Grab.Mode.GRAB:
             grip = True

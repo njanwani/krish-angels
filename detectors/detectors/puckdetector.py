@@ -38,6 +38,7 @@ TWENTY = 'Twenty'
 QUEEN = 'Queen'
 STRIKER = 'Striker'
 BOARD = 'Board'
+FLIPPED = 'Flipped'
 
 #
 #  Detector Node Class
@@ -66,6 +67,7 @@ class DetectorNode(Node):
         self.HSV_LIMITS[STRIKER] = np.array([[29, 44], [31, 84], [124, 192]])
         self.HSV_LIMITS[QUEEN] = np.array([[88, 117], [98, 255], [126, 199]])
         self.HSV_LIMITS[TWENTY] = np.array([[11, 18], [83, 236], [119, 194]])
+        self.HSV_LIMITS[FLIPPED] = np.array([[0, 179], [0, 99], [0, 106]])
 
         self.hsv_board = np.array([[10, 22], [99, 224], [130, 214]])
 
@@ -79,6 +81,7 @@ class DetectorNode(Node):
         self.IM_PUB[QUEEN] = self.create_publisher(Image, name + '/binary_' + QUEEN, 3)
         self.IM_PUB[STRIKER] = self.create_publisher(Image, name + '/binary_' + STRIKER, 3)
         self.IM_PUB[BOARD] = self.create_publisher(Image, name + '/binary_' + BOARD, 3)
+        self.IM_PUB[FLIPPED] = self.create_publisher(Image, name + '/binary/' + FLIPPED, 3)
 
         # eroding and dilating
         self.BINARY_FILTER = {}
@@ -87,7 +90,7 @@ class DetectorNode(Node):
         self.BINARY_FILTER[QUEEN] = lambda b: cv2.dilate(cv2.erode(b, None, iterations=0), None, iterations=1)
         self.BINARY_FILTER[STRIKER] = lambda b: cv2.dilate(cv2.erode(b, None, iterations=0), None, iterations=1)
         self.BINARY_FILTER[BOARD] = lambda b: cv2.dilate(cv2.erode(b, None, iterations=2), None, iterations=1)
-        
+        self.BINARY_FILTER[FLIPPED] = lambda b: cv2.dilate(cv2.erode(b, None, iterations=2), None, iterations=1)
         # annotation colors
         self.COLOR = {}
         self.COLOR[TEN] = self.red
@@ -100,6 +103,7 @@ class DetectorNode(Node):
         self.IDS[TWENTY] = 1
         self.IDS[QUEEN] = 2
         self.IDS[STRIKER] = 3
+        self.IDS[FLIPPED] = 4
 
         # Set up the OpenCV bridge.
         self.bridge = cv_bridge.CvBridge()
@@ -152,56 +156,106 @@ class DetectorNode(Node):
             binary = cv2.inRange(hsv, self.HSV_LIMITS[puck][:,0], self.HSV_LIMITS[puck][:,1])
             binary = self.BINARY_FILTER[puck](binary)
 
-            
-            (contours, hierarchy) = cv2.findContours(binary,
-                                                    cv2.RETR_EXTERNAL,
-                                                    cv2.CHAIN_APPROX_SIMPLE)
+            if puck == FLIPPED:
+                (contours, hierarchy) = cv2.findContours(binary, cv2.RETR_TREE, cv2.CHAIN_APPROX_SIMPLE)
+            else:
+                (contours, hierarchy) = cv2.findContours(binary,
+                                                        cv2.RETR_EXTERNAL,
+                                                        cv2.CHAIN_APPROX_SIMPLE)
             self.IM_PUB[puck].publish(self.bridge.cv2_to_imgmsg(binary, "mono8"))
-            if len(contours) > 0:
-                for contour in contours:
-                    area = cv2.contourArea(contour)
-                    if area < 50:
-                        continue
-                    
-                    ((ur, vr), radius) = cv2.minEnclosingCircle(contour)
-                    x,y,w,h = cv2.boundingRect(contour) 
-                    ur     = int(ur)
-                    vr     = int(vr)
-                    radius = int(radius)
-                    
-                    k=0
-                    expected_area = radius**2 * np.pi
+            if puck == FLIPPED:
+                if len(contours) > 0:
+                    areas = [cv2.contourArea(contour) for contour in contours]
+                    idx_max = np.argmax(areas)
 
-                    if not np.isclose(expected_area / area, 1.0, atol=0.65):
-                        continue
-                    
-                    if puck == STRIKER:
-                        discard = False
-                        for marker in markerCorners:
-                            if np.isclose(np.linalg.norm([x + w//2, y + h//2] - np.mean(marker, axis=1)), 0, atol=20):
-                                discard = True
-                                continue
-                        
-                        if discard:
+                    board = contours[idx_max]
+                    if cv2.contourArea(board) < 0:
+                        self.die(frame)
+
+                    # rect = cv2.minAreaRect(board)
+                    # (x,y), (bw,bh), theta = rect
+                    # box = cv2.boxPoints(rect) 
+                    # box = np.int0(box) 
+                    # frame = cv2.drawContours(frame, [box], 0, (0, 0, 255), 2)
+
+                    # area = cv2.contourArea(board)
+                    # area_calc = bw*bh
+                    # accuracy = area / area_calc
+
+                    for contour in contours:
+                        board = board[:,0,:].reshape((-1,1,2))
+                        dist = cv2.pointPolygonTest(board[:,0,:].astype(int), contour[0][0].astype(float), False)
+
+                        area = cv2.contourArea(contour)
+                        if area <= 0:
                             continue
+                        perimeter = cv2.arcLength(contour, True)
+                        r = perimeter / (2 * np.pi)
+                        accuracy = np.pi * r**2 / area
+                        if dist > 0.0 and np.isclose(accuracy, 1.0, atol=0.7) and np.isclose(area, 100, atol=25):
+                            cv2.drawContours(frame, [contour], -1,(0,191,255),2)
+                            
+                            ((ur, vr), radius) = cv2.minEnclosingCircle(contour)
+                            x,y,w,h = cv2.boundingRect(contour) 
+                            ur     = int(ur)
+                            vr     = int(vr)
+                            radius = int(radius)
 
-                    # Draw the circle (yellow) and centroid (red) on the
-                    # original image.
-                    cx, cy = x + (w)//2, y + (h)//2
-                    # if not (puck == TEN and k > 1):
-                    cv2.ellipse(frame, (cx, cy), (w//2, h//2), 0, 0, 360, self.COLOR[puck],  2)
-                    cv2.circle(frame, (cx, cy), 2, self.COLOR[puck], -1)
+                            xyCenter = self.pixelToWorld(frame, ur, vr, None, None, annotateImage=False)
+                            if xyCenter is None:
+                                break
+                            (xc, yc) = xyCenter
+                            pose = Pose()
+                            pose.position.x = float(xc)
+                            pose.position.y = float(yc)
+                            pose.orientation.x = float(self.IDS[puck])
+                            poses.append(pose)
+            else:
+                if len(contours) > 0:
+                    for contour in contours:
+                        area = cv2.contourArea(contour)
+                        if area < 50:
+                            continue
+                        
+                        ((ur, vr), radius) = cv2.minEnclosingCircle(contour)
+                        x,y,w,h = cv2.boundingRect(contour) 
+                        ur     = int(ur)
+                        vr     = int(vr)
+                        radius = int(radius)
+                        
+                        k=0
+                        expected_area = radius**2 * np.pi
 
-                    xyCenter = self.pixelToWorld(frame, cx, cy, self.x0, self.y0)
-                    if xyCenter is None:
-                        # ros_print(self, 'globalization failed')
-                        continue
-                    (xc, yc) = xyCenter
-                    pose = Pose()
-                    pose.position.x = float(xc)
-                    pose.position.y = float(yc)
-                    pose.orientation.x = float(self.IDS[puck])
-                    poses.append(pose)
+                        if not np.isclose(expected_area / area, 1.0, atol=0.65):
+                            continue
+                        
+                        if puck == STRIKER:
+                            discard = False
+                            for marker in markerCorners:
+                                if np.isclose(np.linalg.norm([x + w//2, y + h//2] - np.mean(marker, axis=1)), 0, atol=20):
+                                    discard = True
+                                    continue
+                            
+                            if discard:
+                                continue
+
+                        # Draw the circle (yellow) and centroid (red) on the
+                        # original image.
+                        cx, cy = x + (w)//2, y + (h)//2
+                        # if not (puck == TEN and k > 1):
+                        cv2.ellipse(frame, (cx, cy), (w//2, h//2), 0, 0, 360, self.COLOR[puck],  2)
+                        cv2.circle(frame, (cx, cy), 2, self.COLOR[puck], -1)
+
+                        xyCenter = self.pixelToWorld(frame, cx, cy, self.x0, self.y0)
+                        if xyCenter is None:
+                            # ros_print(self, 'globalization failed')
+                            continue
+                        (xc, yc) = xyCenter
+                        pose = Pose()
+                        pose.position.x = float(xc)
+                        pose.position.y = float(yc)
+                        pose.orientation.x = float(self.IDS[puck])
+                        poses.append(pose)
                 
                 
                 

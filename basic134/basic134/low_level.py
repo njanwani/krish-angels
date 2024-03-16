@@ -41,7 +41,7 @@ class RobotPose:
             self.R = Reye() #@ Roty(self.pitch) @ Rotz(self.theta)
 
     def recalcR(self):
-        self.R = Reye() #@ Roty(self.pitch) @ Rotz(self.theta)
+        self.R = Reye() @ Roty(self.pitch) @ Rotz(self.theta)
 
 class Filter:
     def __init__(self, T, x0):
@@ -64,7 +64,7 @@ class DemoNode(Node):
     AMAX    = VMAX / 10
     THOLD   = 1
 
-    GRIP_MIN = -3
+    GRIP_MIN = -2.5
     GRIP_MAX = 0
 
     POINT_LIB = (np.array([0.45, 0.15, 0.0]),           # side x
@@ -82,7 +82,7 @@ class DemoNode(Node):
         self.grip_act = 0
         self.grip_0 = 0
         self.position0 = self.grabfbk()
-        self.grip_0 = self.position0[-1]
+        # self.grip_0 = self.position0[-1]
         self.position0 = self.position0[:-1]
         self.queue = []
 
@@ -143,10 +143,12 @@ class DemoNode(Node):
         changed = False
         offset_z = 0.03
         if msg.data and self.grip_cmd != self.GRIP_MIN:
+            self.grip_0 = self.grip_cmd
             self.grip_cmd = self.GRIP_MIN
             changed = True
             
         elif not msg.data and self.grip_cmd != self.GRIP_MAX:
+            self.grip_0 = self.grip_cmd
             self.grip_cmd = self.GRIP_MAX
             changed = True
             offset_z *= -1
@@ -183,11 +185,11 @@ class DemoNode(Node):
             return
 
         reach = (msg.position.x**2 + msg.position.y**2 + msg.position.z**2)**0.5
-        if reach < 0.1 or reach > 0.95 or msg.position.z < 0.0 or msg.position.z > 0.51:
+        if reach < 0.2 or reach > 0.95 or msg.position.z < 0.0 or msg.position.z > 0.51:
             # ros_print(self, f'{msg.position.x, msg.position.y}')
             return
         
-        R = Reye() #@ Roty(msg.orientation.y) @ Rotz(msg.orientation.z)
+        R = Reye() @ Roty(msg.orientation.y)
         
         if np.all(np.isclose(np.array([msg.position.x, msg.position.y, msg.position.z]), self.TS['goal'].x, atol=0.01)) \
            and np.all(np.isclose(R, self.TS['goal'].R, atol=0.01)) \
@@ -196,7 +198,7 @@ class DemoNode(Node):
         self.armed = False
         # ros_print(self, 'RE_SPLINE')
         v_last, a_last = 0,0
-        if False and self.mode == Mode.TASK:
+        if self.mode == Mode.TASK:
             _, v_last, a_last = spline5(self.t - self.t0, self.tmove, self.TS['p0'].x.flatten(), self.TS['goal'].x.flatten(), self.TS['v0'],0, self.TS['a0'], 0)
             v_last, a_last = v_last.flatten(), a_last.flatten()
         
@@ -214,7 +216,7 @@ class DemoNode(Node):
         if self.mode in [Mode.STILL, Mode.TASK]:
             self.mode = Mode.TASK
             self.t0 = self.t
-            self.grip_0 = self.grip_act
+            # self.grip_0 = self.grip_act
             self.tmove = max(splinetime(self.TS['p0'].x, self.TS['goal'].x, v0=v_last, vf=0), 3 * int(gripping))
             self.s_last = 0
             self.TS['v0'] = v_last
@@ -228,7 +230,7 @@ class DemoNode(Node):
         if np.isclose(curr_grip, self.grip_act, 0.01):
             self.grip_converged = True
         '''
-        self.grip_act = msg.position[-1]
+        self.grip_act = msg.effort[-1]
         self.JS['q_act'] = np.array(msg.position)[:-1]
         if self.mode == Mode.START:
             self.JS['q0'] = self.JS['q_act']
@@ -280,11 +282,11 @@ class DemoNode(Node):
             self.t0 = self.t
             self.JS['q0'] = self.JS['q_act']
             self.tmove = splinetime(self.JS['q0'], self.JS['q_start'], 0, 0, DemoNode.VMAX, DemoNode.AMAX, cartesian=False)
-        return q, qdot
+        return q, qdot, gq
 
     # Send a command - called repeatedly by the timer.
     def sendcmd(self):
-        # ros_print(self, self.TS['goal'].x)
+        # ros_print(self, f'{self.grip_0, self.grip_cmd}')
         if self.tlast is None:
             self.tlast = time.time() - 1 / RATE
         dt = time.time() - self.tlast
@@ -301,7 +303,7 @@ class DemoNode(Node):
             q = np.append(q, [0])
             qdot = np.zeros(6)
             t_shoulder, t_elbow, t_wrist = self.gravity(self.JS['q_act'])
-            qeff = spline5(self.t - self.t0, self.tmove, 0.0, 1, 0, 0, 0, 0)[0] * np.array([0.0, t_shoulder, t_elbow, t_wrist, 0.0, nan])
+            qeff = spline5(self.t - self.t0, self.tmove, 0.0, 1, 0, 0, 0, 0)[0] * np.array([0.0, t_shoulder, t_elbow, t_wrist, 0.0, 0.0])
 
         elif self.mode == Mode.GRAV:
             q = [nan] * 6
@@ -311,9 +313,9 @@ class DemoNode(Node):
 
         elif self.mode == Mode.TASK:
             s, sdot, _ = self.state_space()
-            q, qdot = self.compute_ts_spline(s, sdot)
+            q, qdot, gq = self.compute_ts_spline(s, sdot)
             t_shoulder, t_elbow, t_wrist = self.gravity(q)
-            qeff = np.array([0.0, t_shoulder, t_elbow, t_wrist, 0.0, 0.0])
+            qeff = np.array([0.0, t_shoulder, t_elbow, t_wrist, 0.0, gq])
             ready = True
             self.armed = False
 
@@ -327,7 +329,7 @@ class DemoNode(Node):
             q, qdot = self.JS['q_last'], np.zeros(5)
             q, qdot = np.array(list(q) + [self.grip_cmd]), np.array(list(qdot) + [0])
             t_shoulder, t_elbow, t_wrist = self.gravity(q)
-            qeff = np.array([0.0, t_shoulder, t_elbow, t_wrist, 0.0, 0.0])
+            qeff = np.array([0.0, t_shoulder, t_elbow, t_wrist, 0.0, self.grip_cmd])
             ready = True
         
         else:
@@ -350,6 +352,7 @@ class DemoNode(Node):
             self.t0 = self.t
             self.TS['p0'] = RobotPose(self.chain.fkin(self.JS['q_last'])[0], self.JS['q_last'][0] - self.JS['q_last'][-1])
             self.tmove = splinetime(self.TS['p0'].x, self.TS['goal'].x, v0=0, vf=0)
+            self.grip_0 = self.grip_cmd
             # ros_print(self, f"\n\n\n\n\n\n\nTMOVE: {self.tmove}\n\n\n\n\n\n\n")
             # setup splinetime
 
@@ -357,9 +360,11 @@ class DemoNode(Node):
             self.lastmode = self.mode
             self.armed = True
             self.mode = Mode.STILL
+            self.grip_0 = self.grip_cmd
         
         # q = q + np.array([0, 0, 0, 0, 0])
-        
+        q[-1] = nan
+        qdot[-1] = nan
         self.cmdmsg.position = list(q)
         self.cmdmsg.velocity = list(qdot)
         self.cmdmsg.effort = list(qeff)
