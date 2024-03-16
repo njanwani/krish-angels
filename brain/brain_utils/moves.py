@@ -36,7 +36,7 @@ class Grab:
             if self.angle is None:
                 self.angle = np.arctan2(self.pos[1], self.pos[0])
             goal[1] = self.angle
-            goal[2] = np.pi / 3
+            goal[2] = 0
             grip = False
         elif self.mode == Grab.Mode.GRAB:
             grip = True
@@ -164,11 +164,12 @@ class Move:
         TO_POS = 1
         STOP = 2
 
-    def __init__(self, pos, angle):
+    def __init__(self, pos, angle, pitch = 0):
         self.mode = Move.Mode.START
         self.pos = pos
         self.angle = angle
         self.done = False
+        self.pitch = pitch
 
     def step(self, t, ready, armed):
         goal = None
@@ -180,7 +181,7 @@ class Move:
             goal = [None, None, None]
             goal[0] = self.pos
             goal[1] = self.angle
-            goal[2] = 0
+            goal[2] = self.pitch
         elif self.mode == Move.Mode.STOP:
             pass
         else:

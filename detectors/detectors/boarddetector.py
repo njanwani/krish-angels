@@ -155,11 +155,12 @@ class DetectorNode(Node):
             box_sorted[3] = x_large[1]
             _sort = list(box).sort(key=lambda x: x[0])
             for idx, pt in enumerate(box_sorted):
-                cv2.putText(frame, str(idx), pt, cv2.FONT_HERSHEY_SIMPLEX,
-                    0.5, (255, 0, 0), 2, cv2.LINE_AA)
+                # cv2.putText(frame, str(idx), pt, cv2.FONT_HERSHEY_SIMPLEX,
+                #     0.5, (255, 0, 0), 2, cv2.LINE_AA)
+                cv2.circle(frame, tuple(np.array(pt).astype(int)), 5, (255, 0, 255), -1)
             theta = np.arctan2(box_sorted[1][1] - box_sorted[0][1], box_sorted[1][0] - box_sorted[0][0])
             
-            w, h = (95, 70)
+            w, h = (72, 50) ##(95, 70)
             p1 = np.array([w * np.cos(theta), w * np.sin(theta)])
             p2 = np.array([h * np.cos(theta - np.pi / 2), h * np.sin(theta - np.pi / 2)])
             v1 = tuple((np.array(box_sorted[0]) + p1 + p2).astype(int))

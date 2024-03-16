@@ -26,6 +26,7 @@ class Stage(Enum):
     PUT = 2
     SHOOT = 3
     RETURN = 4
+    BOARD = 5
 
 class Turn(Enum):
     ROBOT = 0
@@ -296,7 +297,13 @@ class BrainNode(Node):
         elif self.stage == Stage.PUT: self.stage = Stage.SHOOT
         elif self.stage == Stage.SHOOT: self.stage = Stage.RETURN
         elif self.stage == Stage.RESET: self.stage = Stage.GET
+        elif self.stage == Stage.BOARD: self.stage = Stage.GET
         else: raise Exception('Unknown stage encountered')
+
+    def in_taskspace(self, x):
+        r = np.linalg.norm(x)
+        ros_print(self, f'r = {r}')
+        return r > 0.2 and r < 0.9
 
     def work(self):
         self.t = time.time()
@@ -381,11 +388,18 @@ class BrainNode(Node):
             #         self.flipped = False
             if self.stage == Stage.GET and self.moves == []:
                 self.update_pucks()
+                if self.focus is not None:
+                    ros_print(self, self.in_taskspace(self.focus.x))
 
                 if self.pucks[STRIKER] != [] and self.focus is None:
                     idx = np.random.choice(np.arange(len(self.pucks[STRIKER])))
                     self.focus = self.pucks[STRIKER][idx]
 
+                    if not self.in_taskspace(self.focus.x):
+                        ros_print(self, 'RUNNING')
+                        self.stage = Stage.BOARD
+                        return
+                    
                     self.moves.append(Move(pos=self.focus.x + REST_HEIGHT, angle=self.focus.angle))
                     self.moves.append(Grab(self.focus.x, angle=self.focus.angle))
                     self.moves.append(Move(pos=self.focus.x + REST_HEIGHT, angle=self.focus.angle))
@@ -440,7 +454,22 @@ class BrainNode(Node):
             elif self.stage == Stage.RESET and self.moves == []:
                 self.update_pucks()
                 self.moves.append(Drop(self.HOME, angle=0.0))
-                # self.moves.append(Wait(3.0))
+            elif self.stage == Stage.BOARD and self.moves == []:
+                self.update_pucks()
+                c0, c1 = self.board_corners[:2]
+                x_level = (c0.position.x + c1.position.x) / 2
+                ros_print(self, f'X LEVEL {x_level}')
+                deltax = np.array([x_level - 0.15, 0, 0])
+                extraz = np.array([0,0,0.1])
+                PITCH = np.pi / 2 - 0.2
+                togo = np.array([x_level + EE_HEIGHT + 0.02, 0.07, BOARD_HEIGHT + 0.03])
+                self.moves.append(Move(togo + REST_HEIGHT + extraz, angle=0, pitch=0))
+                self.moves.append(Move(togo + REST_HEIGHT + extraz, angle=0, pitch=PITCH))
+                self.moves.append(Move(togo, angle=0, pitch=PITCH))
+                self.moves.append(Move(togo - deltax, angle=0, pitch=PITCH))
+                self.moves.append(Move(togo + REST_HEIGHT + extraz, angle=0, pitch=PITCH))
+                self.moves.append(Move(togo + REST_HEIGHT + extraz, angle=0, pitch=0))
+                self.moves.append(Move(self.HOME, angle=0))
             elif self.stage not in Stage:
                 raise Exception(f'Unknown Stage encountered: {self.stage}')
 

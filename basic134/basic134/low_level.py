@@ -189,7 +189,7 @@ class DemoNode(Node):
             # ros_print(self, f'{msg.position.x, msg.position.y}')
             return
         
-        R = Reye() @ Roty(msg.orientation.y)
+        R = Reye() @ Roty(msg.orientation.y) @ Rotz(msg.orientation.z)
         
         if np.all(np.isclose(np.array([msg.position.x, msg.position.y, msg.position.z]), self.TS['goal'].x, atol=0.01)) \
            and np.all(np.isclose(R, self.TS['goal'].R, atol=0.01)) \
