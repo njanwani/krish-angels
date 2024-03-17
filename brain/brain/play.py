@@ -40,7 +40,7 @@ STRIKER = 3
 FLIPPED = 4
 ALL = 5
 
-EE_HEIGHT = 0.181 #0.193
+EE_HEIGHT = 0.170 #0.193
 BOARD_HEIGHT = 0.075 #0.07
 REST_HEIGHT = np.array([0,0,0.1])
 BOARD_WIDTH = 0.6874
@@ -232,12 +232,12 @@ class BrainNode(Node):
         self.updating_pucks = False
 
     def pick_puck(self):
-        dmin, puckmin = np.inf, None
+        dmin, puckmin = 999_999_999, None
         for puck in self.pucks[ALL]:
             if puck.denom == STRIKER:
                 continue
-            ros_print(self, 'trying a puck')
-            temp_dmin = np.inf
+            # ros_print(self, 'trying a puck')
+            temp_dmin = 999_999_999
             for corner in self.board_corners:
                 d = np.array([puck.x[0], puck.x[1]]) - np.array([corner.position.x, corner.position.y])
                 if np.linalg.norm(d) < temp_dmin:
@@ -247,6 +247,7 @@ class BrainNode(Node):
                 dmin = temp_dmin
                 puckmin = puck
         
+        ros_print(self, f'denomination: {puckmin.denom}')
         return puckmin
 
     def pick_shot_pos(self):
@@ -352,12 +353,12 @@ class BrainNode(Node):
             self.moves.pop(0)
             ros_print(self, self.moves)
             if self.moves == []:
-                self.focus = None
+                # self.focus = None
                 self.transit_stage()
-                self.update_pucks()
+                # self.update_pucks()
 
     def think(self):
-        ros_print(self, f'{self.stage}, {self.dropped}')
+        ros_print(self, f'{self.stage}, {self.dropped}, {self.focus}')
         if self.turn == Turn.ROBOT:
             # if self.flipped:
             #     # move to nearest wall
@@ -377,7 +378,8 @@ class BrainNode(Node):
             #             ros_print(self, 'added closest 0, 1')
             #             closest_pos = np.array([limits[closest], puck.x[1], 0.0])
             #             self.moves.append(Grab(pos=closest_pos + REST_HEIGHT, angle=dist[sides[closest]]))
-            #             self.moves.append(Drop(closest_pos + REST_HEIGHT, angle=dist[sides[closest]]))
+            #       if self.focus is not None:
+                    # ros_print(self, self.in_taskspace(self.focus.x))      self.moves.append(Drop(closest_pos + REST_HEIGHT, angle=dist[sides[closest]]))
             #             ros_print(self, self.moves)
             #         else:
             #             ros_print(self, 'added closest 2, 3')
@@ -403,11 +405,11 @@ class BrainNode(Node):
                     self.moves.append(Move(pos=self.focus.x + REST_HEIGHT, angle=self.focus.angle))
                     self.moves.append(Grab(self.focus.x, angle=self.focus.angle))
                     self.moves.append(Move(pos=self.focus.x + REST_HEIGHT, angle=self.focus.angle))
-                    self.moves.append(Move(pos=self.HOME, angle=0))
+                    # self.moves.append(Move(pos=self.HOME, angle=0))
 
             elif self.stage == Stage.PUT and self.moves == []:
                 # CURRENTLY RANDOMIZED SHOT, REPLACE WITH A PLAY ALGORITHM
-                self.update_pucks()
+                # self.update_pucks()
                 self.shoot_pos, self.shoot_angle = np.array([0.4, 0.0, BOARD_HEIGHT + EE_HEIGHT]), 0.0 # SWITCH WITH PLAY ALGO
                 if self.shot_axis is not None:
                     positions = self.pick_shot_pos()
@@ -420,7 +422,7 @@ class BrainNode(Node):
                 if pucks is not None or pucks is not []:
                     # randpuck = random.choice(pucks)
                     randpuck = self.pick_puck()
-                    self.shoot_angle = -np.arctan2(randpuck.x[1]-self.shoot_pos[1], randpuck.x[0]-self.shoot_pos[0])
+                    self.shoot_angle = np.arctan2(randpuck.x[1]-self.shoot_pos[1], randpuck.x[0]-self.shoot_pos[0])
                 ros_print(self, self.shoot_angle)
                 self.moves.append(Move(pos=self.shoot_pos + REST_HEIGHT, angle=self.shoot_angle))
                 self.moves.append(Drop(self.shoot_pos, angle=self.shoot_angle))
@@ -429,14 +431,19 @@ class BrainNode(Node):
                 
             elif self.stage == Stage.SHOOT and self.moves == []:
                 self.update_pucks()
-                if self.pucks[STRIKER] != [] and self.focus is None:
+                if self.pucks[STRIKER] != []:
                     idx = np.random.choice(np.arange(len(self.pucks[STRIKER])))
+                    if np.linalg.norm(self.shoot_pos - self.pucks[STRIKER][idx].x) > 0.05:
+                        ros_print(self, f'FOCUS STUFF {self.focus.x} - {self.pucks[STRIKER][idx].x}')
+                        self.stage = Stage.RESET
+                        self.moves = []
+                        return 
                     self.focus = self.pucks[STRIKER][idx]
 
                     pucks = self.pucks[TEN] + self.pucks[TWENTY] + self.pucks[QUEEN] + self.pucks[FLIPPED]
-                    if pucks is not None or pucks is not []:
-                        randpuck = random.choice(pucks)
-                        self.shoot_angle = np.arctan2(randpuck.x[1]-self.focus.x[1], randpuck.x[0]-self.focus.x[0])
+                    # if pucks is not None or pucks is not []:
+                    #     randpuck = random.choice(pucks)
+                    #     self.shoot_angle = np.arctan2(randpuck.x[1]-self.focus.x[1], randpuck.x[0]-self.focus.x[0])
 
                     delta = 0.02 * np.array([np.cos(self.shoot_angle + np.pi), np.sin(self.shoot_angle + np.pi), 0])
                     ros_print(self, "SHOOT DEBUG: ")
@@ -454,15 +461,16 @@ class BrainNode(Node):
             elif self.stage == Stage.RESET and self.moves == []:
                 self.update_pucks()
                 self.moves.append(Drop(self.HOME, angle=0.0))
+                self.focus = None
             elif self.stage == Stage.BOARD and self.moves == []:
                 self.update_pucks()
                 c0, c1 = self.board_corners[:2]
                 x_level = (c0.position.x + c1.position.x) / 2
                 ros_print(self, f'X LEVEL {x_level}')
-                deltax = np.array([x_level - 0.15, 0, 0])
+                deltax = np.array([x_level - 0.12, 0, 0])
                 extraz = np.array([0,0,0.1])
                 PITCH = np.pi / 2 - 0.2
-                togo = np.array([x_level + EE_HEIGHT + 0.02, 0.07, BOARD_HEIGHT + 0.03])
+                togo = np.array([x_level + EE_HEIGHT + 0.06, 0.07, BOARD_HEIGHT + 0.03])
                 self.moves.append(Move(togo + REST_HEIGHT + extraz, angle=0, pitch=0))
                 self.moves.append(Move(togo + REST_HEIGHT + extraz, angle=0, pitch=PITCH))
                 self.moves.append(Move(togo, angle=0, pitch=PITCH))
@@ -470,6 +478,7 @@ class BrainNode(Node):
                 self.moves.append(Move(togo + REST_HEIGHT + extraz, angle=0, pitch=PITCH))
                 self.moves.append(Move(togo + REST_HEIGHT + extraz, angle=0, pitch=0))
                 self.moves.append(Move(self.HOME, angle=0))
+                self.focus = None
             elif self.stage not in Stage:
                 raise Exception(f'Unknown Stage encountered: {self.stage}')
 
@@ -479,6 +488,7 @@ class BrainNode(Node):
             if self.thumbs_up:
                 self.stage = Stage.GET
                 self.turn = Turn.ROBOT
+                self.focus = None
 
     # Shutdown
     def shutdown(self):

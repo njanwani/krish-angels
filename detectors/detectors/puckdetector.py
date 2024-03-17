@@ -22,7 +22,7 @@ from sensor_msgs.msg    import Image
 from geometry_msgs.msg  import Point, Pose, PoseArray, Vector3
 from nav_msgs.msg       import Odometry
 from visualization_msgs.msg import Marker, MarkerArray
-from std_msgs.msg import ColorRGBA
+from std_msgs.msg import ColorRGBA, Int32MultiArray
 
 FPS = 15.0
 
@@ -39,6 +39,12 @@ QUEEN = 'Queen'
 STRIKER = 'Striker'
 BOARD = 'Board'
 FLIPPED = 'Flipped'
+
+def ros_print(node, msg: str):
+    """
+    Easy print for ROS nodes
+    """
+    node.get_logger().info(str(msg))
 
 #
 #  Detector Node Class
@@ -69,7 +75,7 @@ class DetectorNode(Node):
         self.HSV_LIMITS[TWENTY] = np.array([[11, 18], [83, 236], [119, 194]])
         self.HSV_LIMITS[FLIPPED] = np.array([[0, 179], [0, 99], [0, 106]])
 
-        self.hsv_board = np.array([[10, 22], [99, 224], [130, 214]])
+        self.hsv_board = np.array([[10, 28], [21, 71], [0, 206]])
 
         # publishers
         self.pub = self.create_publisher(PoseArray, '/' + name + '/pucks', 3)
@@ -114,11 +120,18 @@ class DetectorNode(Node):
         self.last_markerCorners = None
         self.last_markerIds = None
 
+        self.pixel_corners = None
+
+        self.board_sub = self.create_subscription(
+            Int32MultiArray, '/boarddetector/pixel_corners', self.board_cb, 1)
+
+
         # Finally, subscribe to the incoming image topic.  Using a
         # queue size of one means only the most recent message is
         # stored for the next subscriber callback.
         self.sub = self.create_subscription(
             Image, '/image_raw', self.process, 1)
+        
         
         # ros_print(self, 'here!')
 
@@ -128,20 +141,28 @@ class DetectorNode(Node):
         # No particular cleanup, just shut down the node.
         self.destroy_node()
 
+    def board_cb(self, msg: Int32MultiArray):
+        self.pixel_corners = np.array(msg.data).astype(int)
 
     # Process the image (detect the ball).
     def process(self, msg):
         # Confirm the encoding and report.
         assert(msg.encoding == "rgb8")
+        if self.pixel_corners is None:
+            return
 
         id_frame = self.bridge.imgmsg_to_cv2(msg, "passthrough")
+
         hsv = cv2.cvtColor(id_frame, cv2.COLOR_RGB2HSV)
+    
+        
         # hsv = cv2.cvtColor(frame, cv2.COLOR_BGR2HSV)  # Cheat: swap red/blue
 
         # Grab the image shape, determine the center pixel.
         (H, W, D) = id_frame.shape
         uc = W//2
         vc = H//2
+
         
         markerCorners, markerIds, _ = cv2.aruco.detectMarkers(
             id_frame, cv2.aruco.getPredefinedDictionary(cv2.aruco.DICT_4X4_50))
@@ -225,6 +246,39 @@ class DetectorNode(Node):
                         
                         k=0
                         expected_area = radius**2 * np.pi
+                        # if puck == TEN:
+                        #     if 0 <= area <= 340.0:
+                        #         ros_print(self, f'Area {area}, 1 puck')
+                        #         k=1
+                        #     elif 340.0 < area <= 650.0:
+                        #         ros_print(self, f'Area {area}, 2 pucks')
+                        #         k=2
+                        #     elif 650 < area <= 800:
+                        #         ros_print(self, f'Area {area}, 3 pucks')
+                        #         k=3
+                        #     else:
+                        #         ros_print(self, f'Area {area}')
+                        #         k=4
+                        #     k=8
+                        #     # ros_print(self, f'{x - bx // 2} { x + bx // 2}\t{y - by // 2} { y + by // 2}')
+                        #     # ros_print(self, self.pixel_corners)
+                        #     xmin, xmax, ymin, ymax = self.pixel_corners
+                        #     if k != 1:
+                        #         features = np.array(binary[xmin:xmax, ymin:ymax].nonzero()).T
+                        #         kmeans = KMeans(
+                        #             init="random",
+                        #             n_clusters=k,
+                        #             n_init=10,
+                        #             max_iter=20,
+                        #             random_state=42
+                        #         )
+
+                        #         kmeans.fit(features)
+                        #         centers = kmeans.cluster_centers_.astype(int)
+                        #         ros_print(self, len(centers))
+                        #         for center in centers:
+                        #             cy, cx = center
+                        #             cv2.circle(frame, (cx + xmin, cy + ymin), 5, self.COLOR[puck], -1)
 
                         if not np.isclose(expected_area / area, 1.0, atol=0.65):
                             continue

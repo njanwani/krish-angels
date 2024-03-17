@@ -22,7 +22,7 @@ from sensor_msgs.msg    import Image
 from geometry_msgs.msg  import Point, Pose, PoseArray, Vector3
 from nav_msgs.msg       import Odometry
 from visualization_msgs.msg import Marker, MarkerArray
-from std_msgs.msg import ColorRGBA
+from std_msgs.msg import ColorRGBA, Int32MultiArray
 
 FPS = 15.0
 
@@ -62,6 +62,7 @@ class DetectorNode(Node):
         self.im_raw_pub = self.create_publisher(Image, name + '/raw_image', 3)
         self.board_pub = self.create_publisher(Pose, name + '/pose', 3)
         self.board_corner_pub = self.create_publisher(PoseArray, name + '/board_corners', 3)
+        self.pixel_corner_pub = self.create_publisher(Int32MultiArray, name + '/pixel_corners', 3)
         self.shot_axis_pub = self.create_publisher(PoseArray, name + '/shot_axis', 3)
 
         # eroding and dilating
@@ -138,6 +139,10 @@ class DetectorNode(Node):
 
             rect = cv2.minAreaRect(contour)
             (x,y), (bw,bh), theta = rect
+            msg = Int32MultiArray()
+            msg.data = [int(x - bw // 2), int(x + bw // 2),
+                        int(y - bh // 2), int(y + bh // 2)]
+            self.pixel_corner_pub.publish(msg)
             box = cv2.boxPoints(rect) 
             box = np.int0(box) 
             frame = cv2.drawContours(frame, [box], 0, (0, 0, 255), 2)
@@ -193,12 +198,13 @@ class DetectorNode(Node):
 
             area = cv2.contourArea(contour)
             # ros_print(self, area)
-            area_calc = bw*bh
+            area_calc = bw*bw
             accuracy = area / area_calc
+            ros_print(self, area)
             # perimeter = cv2.arcLength(contour, True)  # Perimeter of first contour
             # ros_print(self, accuracy)
         
-        if accuracy > 0.07:
+        if accuracy > 0.9 and np.isclose(78420, area, atol=5000):
             xyCenter = self.pixelToWorld(frame, rect[0][0], rect[0][1], self.x0, self.y0)
             self.im_raw_pub.publish(self.bridge.cv2_to_imgmsg(frame, "rgb8"))
             if xyCenter is None:
